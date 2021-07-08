@@ -331,6 +331,16 @@ class LearningPolicy(NamedTuple):
                                                                "arm decision. Specifically, the function signature is "
                                                                "binarize(arm: Arm, reward: Num) -> True/False or 0/1"))
 
+    class TreeBandit(NamedTuple):
+        """Tree Bandit Learning Policy.
+
+        Attributes
+        ----------
+        mab_policy: Callable
+        default = TS?
+
+        """
+
     class UCB1(NamedTuple):
         """Upper Confidence Bound1 Learning Policy.
 
