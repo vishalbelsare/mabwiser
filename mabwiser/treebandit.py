@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: Apache-2.0
 
+from copy import deepcopy
 from typing import Dict, List, NoReturn, Optional, Callable
 
 import numpy as np
@@ -46,31 +47,15 @@ class _TreeBandit(BaseMAB):
 
     def predict(self, contexts: np.ndarray = None) -> Arm:
 
-        # Return the first arm with maximum expectation
-        return argmax(self.arm_to_expectation)
+        return self._parallel_predict(contexts, is_predict=True)
 
     def predict_expectations(self, contexts: np.ndarray = None) -> Dict[Arm, Num]:
 
-        # For each arm, follow the contexts in each arm's tree to find leaf
-        # TODO: can this work with more than one context at a time?
-        # TODO: can this work without context?
-        for arm in self.arms:
-            # Assuming there is only one context, find leaf for that context
-            leaf_index = self.arm_to_tree.apply(contexts[0])[0]
-
-            # Go to the reward list for that leaf
-            leaf_rewards = self.arm_to_rewards[arm][leaf_index]
-
-            # Apply mab_policy to update arm_to_expectation
-            # TODO: (just picked a random reward for now)
-            self.arm_to_expectations[arm] = self.rng.choice(leaf_rewards)
-
-        return self.arm_to_expectation.copy()
+        return self._parallel_predict(contexts, is_predict=False)
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
 
         # Create dataset for the given arm
-        # TODO: is it possible to implement this (fit decision tree) without context?
         arm_contexts = contexts[decisions == arm]
         arm_rewards = rewards[decisions == arm]
 
@@ -78,13 +63,51 @@ class _TreeBandit(BaseMAB):
         self.arm_to_tree[arm].fit(arm_contexts, arm_rewards)
 
         # For each leaf, keep a list of rewards
-        leaf_indices = self.arm_to_tree[arm].apply(arm_contexts)
+        context_leaf_indices = self.arm_to_tree[arm].apply(arm_contexts)
+        leaf_indices = set(context_leaf_indices)
 
-        # TODO: go through leaf indices and update each leaf's rewards list
+        for index in leaf_indices:
+            # get rewards list for each leaf
+            self.arm_to_rewards[arm] = arm_rewards[context_leaf_indices == index]
 
     def _predict_contexts(self, contexts: np.ndarray, is_predict: bool,
                           seeds: Optional[np.ndarray] = None, start_index: Optional[int] = None) -> List:
-        pass
+
+        # Get local copy of model, arm_to_expectation and arms to minimize
+        # communication overhead between arms (processes) using shared objects
+        arm_to_tree = deepcopy(self.arm_to_tree)
+        arm_to_rewards = deepcopy(self.arm_to_rewards)
+        arm_to_expectation = deepcopy(self.arm_to_expectation)
+        arms = deepcopy(self.arms)
+
+        # Create an empty list of predictions
+        predictions = [None] * len(contexts)
+        for index, row in enumerate(contexts):
+            for arm in arms:
+                # go to that arm's tree, follow context, reach leaf
+                leaf_index = arm_to_tree[arm].apply(row)[0]
+
+                # find expected reward
+                leaf_rewards = arm_to_rewards[arm][leaf_index]
+
+                # find expectation, update arm_to_expectation for that arm
+                # Apply mab_policy to update arm_to_expectation
+                # TODO: (how to handle different attributes of different learning policies?)
+
+                # mab = MAB([arm], LearningPolicy.ThompsonSampling())
+                # mab.fit([arm] * len(leaf_rewards), leaf_rewards)
+                # arm_to_expectation[arm] = mab.predict_expectations()[arm]
+
+                # TODO: (just picked random value for now)
+                arm_to_expectation[arm] = self.rng.choice(leaf_rewards)
+
+            if is_predict:
+                predictions[index] = argmax(arm_to_expectation)
+            else:
+                predictions[index] = arm_to_expectation.copy()
+
+        # Return list of predictions
+        return predictions
 
     def _uptake_new_arm(self, arm: Arm, binarizer: Callable = None, scaler: Callable = None):
         self.arm_to_tree[arm] = DecisionTreeClassifier()

@@ -334,10 +334,30 @@ class LearningPolicy(NamedTuple):
     class TreeBandit(NamedTuple):
         """Tree Bandit Learning Policy.
 
+        This policy fits a decision tree for each arm using the context variables.
+        It uses the leaves of these trees to partition the context space into regions
+        and keeps a list of rewards for each leaf.
+        To predict, it receives a context vector and goes to the corresponding
+        leaf at each arm's tree and applies the given MAB learning policy to select a reward
+        from the rewards list at those leaves.
+        It then chooses the arm with the highest expected reward.
+
         Attributes
         ----------
         mab_policy: Callable
         default = TS?
+
+        Example
+        -------
+            >>> from mabwiser.mab import MAB, LearningPolicy
+            >>> list_of_arms = ['Arm1', 'Arm2']
+            >>> decisions = ['Arm1', 'Arm1', 'Arm2', 'Arm1']
+            >>> rewards = [20, 17, 25, 9]
+            >>> contexts = [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
+            >>> mab = MAB(list_of_arms, LearningPolicy.TreeBandit())
+            >>> mab.fit(decisions, rewards, contexts)
+            >>> mab.predict([[3, 2, 0, 1]])
+            'Arm2'
 
         """
 
