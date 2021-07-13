@@ -13,7 +13,8 @@ from mabwiser.utils import reset, argmax, Arm, Num, _BaseRNG
 
 class _TreeBandit(BaseMAB):
     # TODO: set default for mab_policy
-    def __init__(self, rng: _BaseRNG, arms: List[Arm], n_jobs: int, backend: Optional[str], mab_policy: Callable):
+    def __init__(self, rng: _BaseRNG, arms: List[Arm], n_jobs: int, backend: Optional[str],
+                 mab_policy: Optional[Callable] = None):
         super().__init__(rng, arms, n_jobs, backend)
         self.mab_policy = mab_policy
 
@@ -54,7 +55,6 @@ class _TreeBandit(BaseMAB):
         return self._parallel_predict(contexts, is_predict=False)
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
-
         # Create dataset for the given arm
         arm_contexts = contexts[decisions == arm]
         arm_rewards = rewards[decisions == arm]
@@ -67,8 +67,8 @@ class _TreeBandit(BaseMAB):
         leaf_indices = set(context_leaf_indices)
 
         for index in leaf_indices:
-            # get rewards list for each leaf
-            self.arm_to_rewards[arm] = arm_rewards[context_leaf_indices == index]
+            # Get rewards list for each leaf
+            self.arm_to_rewards[arm][index] = arm_rewards[context_leaf_indices == index]
 
     def _predict_contexts(self, contexts: np.ndarray, is_predict: bool,
                           seeds: Optional[np.ndarray] = None, start_index: Optional[int] = None) -> List:
@@ -84,20 +84,14 @@ class _TreeBandit(BaseMAB):
         predictions = [None] * len(contexts)
         for index, row in enumerate(contexts):
             for arm in arms:
-                # go to that arm's tree, follow context, reach leaf
-                leaf_index = arm_to_tree[arm].apply(row)[0]
+                # Go to that arm's tree, follow context, reach leaf
+                leaf_index = arm_to_tree[arm].apply([row])[0]
 
-                # find expected reward
+                # Find expected reward
                 leaf_rewards = arm_to_rewards[arm][leaf_index]
 
                 # find expectation, update arm_to_expectation for that arm
                 # Apply mab_policy to update arm_to_expectation
-                # TODO: (how to handle different attributes of different learning policies?)
-
-                # mab = MAB([arm], LearningPolicy.ThompsonSampling())
-                # mab.fit([arm] * len(leaf_rewards), leaf_rewards)
-                # arm_to_expectation[arm] = mab.predict_expectations()[arm]
-
                 # TODO: (just picked random value for now)
                 arm_to_expectation[arm] = self.rng.choice(leaf_rewards)
 

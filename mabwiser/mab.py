@@ -25,6 +25,7 @@ from mabwiser.popularity import _Popularity
 from mabwiser.rand import _Random
 from mabwiser.softmax import _Softmax
 from mabwiser.thompson import _ThompsonSampling
+from mabwiser.treebandit import _TreeBandit
 from mabwiser.ucb import _UCB1
 from mabwiser.utils import Constants, Arm, Num, check_true, check_false, create_rng
 from mabwiser._version import __author__, __email__, __version__, __copyright__
@@ -361,6 +362,9 @@ class LearningPolicy(NamedTuple):
 
         """
 
+        def _validate(self):
+            pass
+
     class UCB1(NamedTuple):
         """Upper Confidence Bound1 Learning Policy.
 
@@ -669,6 +673,7 @@ class MAB:
                                         LearningPolicy.Random,
                                         LearningPolicy.Softmax,
                                         LearningPolicy.ThompsonSampling,
+                                        LearningPolicy.TreeBandit,
                                         LearningPolicy.UCB1,
                                         LearningPolicy.LinTS,
                                         LearningPolicy.LinUCB],                     # The learning policy
@@ -782,6 +787,8 @@ class MAB:
             lp = _Softmax(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.tau)
         elif isinstance(learning_policy, LearningPolicy.ThompsonSampling):
             lp = _ThompsonSampling(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.binarizer)
+        elif isinstance(learning_policy, LearningPolicy.TreeBandit):
+            lp = _TreeBandit(self._rng, self.arms, self.n_jobs, self.backend)
         elif isinstance(learning_policy, LearningPolicy.UCB1):
             lp = _UCB1(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.alpha)
         elif isinstance(learning_policy, LearningPolicy.LinTS):
@@ -817,7 +824,8 @@ class MAB:
             else:
                 check_true(False, ValueError("Undefined context policy " + str(neighborhood_policy)))
         else:
-            self.is_contextual = isinstance(learning_policy, (LearningPolicy.LinTS, LearningPolicy.LinUCB))
+            self.is_contextual = isinstance(learning_policy, (LearningPolicy.LinTS, LearningPolicy.LinUCB,
+                                                              LearningPolicy.TreeBandit))
             self._imp = lp
 
     @property
@@ -860,6 +868,8 @@ class MAB:
             return LearningPolicy.Softmax(lp.tau)
         elif isinstance(lp, _ThompsonSampling):
             return LearningPolicy.ThompsonSampling(lp.binarizer)
+        elif isinstance(lp, _TreeBandit):
+            return LearningPolicy.TreeBandit()
         elif isinstance(lp, _UCB1):
             return LearningPolicy.UCB1(lp.alpha)
         else:
@@ -1145,8 +1155,8 @@ class MAB:
         # Learning Policy type
         check_true(isinstance(learning_policy,
                               (LearningPolicy.EpsilonGreedy, LearningPolicy.Popularity, LearningPolicy.Random,
-                               LearningPolicy.Softmax, LearningPolicy.ThompsonSampling, LearningPolicy.UCB1,
-                               LearningPolicy.LinTS, LearningPolicy.LinUCB)),
+                               LearningPolicy.Softmax, LearningPolicy.ThompsonSampling, LearningPolicy.TreeBandit,
+                               LearningPolicy.UCB1, LearningPolicy.LinTS, LearningPolicy.LinUCB)),
                    TypeError("Learning Policy type mismatch."))
 
         # Learning policy value
