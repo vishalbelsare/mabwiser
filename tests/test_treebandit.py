@@ -29,9 +29,8 @@ class TreeBanditTest(BaseTest):
                                 is_predict=True)
 
         self.assertEqual(len(arm), 3)
-        self.assertEqual(arm, [[1, 1], [1, 1], [1, 1]])
+        self.assertEqual(arm, [[3, 3], [3, 3], [3, 3]])
 
-        """
         arm, mab = self.predict(arms=['Arm1', 'Arm2'],
                                 decisions=['Arm1', 'Arm1', 'Arm2', 'Arm1'],
                                 rewards=[20, 17, 25, 9],
@@ -41,7 +40,7 @@ class TreeBanditTest(BaseTest):
                                 seed=123456,
                                 num_run=1,
                                 is_predict=True)
-        """
+        self.assertEqual(arm, 'Arm2')
 
     def test_treebandit_expectations(self):
         exps, mab = self.predict(arms=[1, 2, 3],
@@ -57,5 +56,33 @@ class TreeBanditTest(BaseTest):
                                  num_run=1,
                                  is_predict=False)
 
-        self.assertListAlmostEqual(exps[0].values(), [1, 1, 1])
-        self.assertListAlmostEqual(exps[1].values(), [1, 1, 1])
+        self.assertListAlmostEqual(exps[0].values(), [0, 0, 1])
+        self.assertListAlmostEqual(exps[1].values(), [0, 0, 1])
+
+    def test_partial_fit(self):
+        arm, mab = self.predict(arms=['Arm1', 'Arm2'],
+                                decisions=['Arm1', 'Arm1', 'Arm2', 'Arm1'],
+                                rewards=[20, 17, 25, 9],
+                                learning_policy=LearningPolicy.TreeBandit(),
+                                context_history=[[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 1, 0], [3, 2, 1, 0]],
+                                contexts=[[2, 3, 1, 0]],
+                                seed=123456,
+                                num_run=1,
+                                is_predict=True)
+
+        self.assertEqual(arm, 'Arm2')
+
+        decisions = ['Arm2']
+        rewards = [30]
+        contexts = [[2, 3, 0, 1]]
+        mab.partial_fit(decisions, rewards, contexts)
+
+        values_1 = []
+        for key in mab._imp.arm_to_rewards['Arm1'].keys():
+            values_1.extend(mab._imp.arm_to_rewards['Arm1'][key])
+        self.assertListEqual(sorted(values_1), [9, 17, 20])
+
+        values_2 = []
+        for key in mab._imp.arm_to_rewards['Arm2'].keys():
+            values_2.extend(mab._imp.arm_to_rewards['Arm2'][key])
+        self.assertListEqual(sorted(values_2), [25, 30])

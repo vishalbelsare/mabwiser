@@ -12,35 +12,31 @@ from mabwiser.utils import reset, argmax, Arm, Num, _BaseRNG
 
 
 class _TreeBandit(BaseMAB):
-    # TODO: set default for mab_policy
     def __init__(self, rng: _BaseRNG, arms: List[Arm], n_jobs: int, backend: Optional[str],
                  mab_policy: Optional[Callable] = None):
         super().__init__(rng, arms, n_jobs, backend)
         self.mab_policy = mab_policy
 
-        self.arm_to_tree = dict.fromkeys(self.arms, DecisionTreeClassifier())
+        self.arm_to_tree = dict(zip(self.arms, [DecisionTreeClassifier()] * len(self.arms)))
         # for each arm, keep dict of leaves and their reward list(ndarray)
-        self.arm_to_rewards = dict.fromkeys(self.arms, dict())
+        self.arm_to_rewards = dict(zip(self.arms, [dict()] * len(self.arms)))
 
     def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
 
         # Reset the decision trees of each arm
-        reset(self.arm_to_tree, DecisionTreeClassifier())
-        reset(self.arm_to_rewards, dict())
+        for arm in self.arms:
+            self.arm_to_tree[arm] = DecisionTreeClassifier()
+            self.arm_to_rewards[arm] = dict()
 
         # Calculate fit
         self._parallel_fit(decisions, rewards, contexts)
 
     def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
 
-        # Update rewards list at leaf for each arm
-        for arm in self.arms:
-            arm_contexts = contexts[decisions == arm]
-            arm_rewards = rewards[decisions == arm]
-            leaf_indices = self.arm_to_tree[arm].apply(arm_contexts)
-            for i, leaf_index in enumerate(leaf_indices):
-                leaf_rewards = self.arm_to_rewards[arm][leaf_index]
-                self.arm_to_rewards[arm][leaf_index] = np.append(leaf_rewards, arm_rewards[i])
+        # Update rewards list at leaves
+        for i, arm in enumerate(decisions):
+            leaf_index = self.arm_to_tree[arm].apply([contexts[i]])[0]
+            self.arm_to_rewards[arm][leaf_index] = np.append(self.arm_to_rewards[arm][leaf_index], rewards[i])
 
         # this algorithm won't do actual partial fit, so we won't call parallel_fit/fit_arm again
         # Calculate fit

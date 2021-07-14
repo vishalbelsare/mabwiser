@@ -346,7 +346,7 @@ class LearningPolicy(NamedTuple):
         Attributes
         ----------
         mab_policy: Callable
-        default = TS?
+        default = UCB1
 
         Example
         -------
