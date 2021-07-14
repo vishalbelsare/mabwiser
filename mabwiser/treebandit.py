@@ -17,16 +17,11 @@ class _TreeBandit(BaseMAB):
         super().__init__(rng, arms, n_jobs, backend)
         self.mab_policy = mab_policy
 
-        self.arm_to_tree = dict(zip(self.arms, [DecisionTreeClassifier()] * len(self.arms)))
-        # for each arm, keep dict of leaves and their reward list(ndarray)
-        self.arm_to_rewards = dict(zip(self.arms, [dict()] * len(self.arms)))
-
     def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
 
         # Reset the decision trees of each arm
-        for arm in self.arms:
-            self.arm_to_tree[arm] = DecisionTreeClassifier()
-            self.arm_to_rewards[arm] = dict()
+        self.arm_to_tree = {arm: DecisionTreeClassifier() for arm in self.arms}
+        self.arm_to_rewards = {arm: dict() for arm in self.arms}
 
         # Calculate fit
         self._parallel_fit(decisions, rewards, contexts)
