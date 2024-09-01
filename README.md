@@ -1,3 +1,5 @@
+[![ci](https://github.com/fidelity/mabwiser/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/fidelity/mabwiser/actions/workflows/ci.yml) [![PyPI version fury.io](https://badge.fury.io/py/mabwiser.svg)](https://pypi.python.org/pypi/mabwiser/) [![PyPI license](https://img.shields.io/pypi/l/mabwiser.svg)](https://pypi.python.org/pypi/mabwiser/) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com) [![Downloads](https://static.pepy.tech/personalized-badge/mabwiser?period=total&units=international_system&left_color=grey&right_color=orange&left_text=Downloads)](https://pepy.tech/project/mabwiser)
+
 # MABWiser: Parallelizable Contextual Multi-Armed Bandits 
 
 MABWiser ([IJAIT 2021](https://www.worldscientific.com/doi/10.1142/S0218213021500214), [ICTAI 2019](https://ieeexplore.ieee.org/document/8995418)) is a research library written in Python for rapid prototyping of multi-armed bandit algorithms. It supports **context-free**, **parametric** and **non-parametric** **contextual** bandit models and provides built-in parallelization for both training and testing components. 
@@ -5,6 +7,12 @@ MABWiser ([IJAIT 2021](https://www.worldscientific.com/doi/10.1142/S021821302150
 The library also provides a simulation utility for comparing different policies and performing hyper-parameter tuning. MABWiser follows a scikit-learn style public interface, adheres to [PEP-8 standards](https://www.python.org/dev/peps/pep-0008/), and is tested heavily. 
 
 MABWiser is developed by the Artificial Intelligence Center of Excellence at Fidelity Investments. Documentation is available at [fidelity.github.io/mabwiser](https://fidelity.github.io/mabwiser).
+
+## Bandit-based Recommender Systems
+To solve personalized recommendation problems, MABWiser is integrated into our [Mab2Rec library](https://github.com/fidelity/mab2rec). Mab2Rec enables building content- and context-aware recommender systems, whereby MABWiser helps selecting the next best item (arm).
+
+## Bandit-based Large-Neighborhood Search
+To solve combinatorial optimization problems, MABWiser is integrated into [Adaptive Large Neighborhood Search](https://github.com/N-Wouda/ALNS). The ALNS library enables building metaheuristics for complex optimization problems, whereby MABWiser helps selecting the next best destroy, repair operation (arm).  
 
 ## Quick Start
 
@@ -34,7 +42,8 @@ mab.predict()
 
 Available Learning Policies:
 * Epsilon Greedy [1, 2]
-* LinTS [3]
+* LinGreedy [1, 2]
+* LinTS [3]. See [11] for a formal treatment of reproducibility in LinTS
 * LinUCB [4]
 * Popularity [2]
 * Random [2]
@@ -51,7 +60,7 @@ Available Neighborhood Policies:
 
 ## Installation
 
-MABWiser is available to install as `pip install mabwiser`. It can also be installed by building from source by following the instructions in the [documentation](https://fidelity.github.io/mabwiser/installation.html).
+MABWiser requires **Python 3.8+** and can be installed from PyPI using ``pip install mabwiser`` or by building from source as shown in [installation instructions](https://fidelity.github.io/mabwiser/installation.html).
 
 ## Support
 
@@ -105,5 +114,6 @@ MABWiser is licensed under the [Apache License 2.0](LICENSE).
 8. Philippe Rigollet and Assaf Zeevi. Nonparametric bandits with covariates 
 9. Indyk, Piotr, Motwani, Rajeev, Raghavan, Prabhakar, Vempala, Santosh. Locality-preserving hashing in multidimensional spaces
 10. Adam N. Elmachtoub, Ryan McNellis, Sechan Oh, Marek Petrik, A practical method for solving contextual bandit problems using decision trees
+11. Doruk Kilitcioglu, Serdar Kadioglu, Non-deterministic behavior of thompson sampling with linear payoffs and how to avoid it
 
 <br>

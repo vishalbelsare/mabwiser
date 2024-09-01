@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-from typing import Callable, Dict, List, NoReturn, Optional
+from copy import deepcopy
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 
 from mabwiser.base_mab import BaseMAB
-from mabwiser.utils import reset, argmax, Arm, Num, _BaseRNG
+from mabwiser.utils import Arm, Num, _BaseRNG, argmax, reset
 
 
 class _UCB1(BaseMAB):
@@ -22,7 +23,7 @@ class _UCB1(BaseMAB):
         self.arm_to_count = dict.fromkeys(self.arms, 0)
         self.arm_to_mean = dict.fromkeys(self.arms, 0)
 
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Reset the sum, count, and expectations to zero
         reset(self.arm_to_sum, 0)
@@ -30,14 +31,20 @@ class _UCB1(BaseMAB):
         reset(self.arm_to_mean, 0)
         reset(self.arm_to_expectation, 0)
 
+        # Reset warm started arms
+        self._reset_arm_to_status()
+
         # Total number of decisions
         self.total_count = len(decisions)
 
         # Calculate fit
         self._parallel_fit(decisions, rewards)
 
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=False)
+
     def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray,
-                    contexts: Optional[np.ndarray] = None) -> NoReturn:
+                    contexts: Optional[np.ndarray] = None) -> None:
 
         # Update total number of decisions
         self.total_count += len(decisions)
@@ -45,15 +52,36 @@ class _UCB1(BaseMAB):
         # Calculate fit
         self._parallel_fit(decisions, rewards)
 
-    def predict(self, contexts: np.ndarray = None) -> Arm:
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=True)
 
-        # Return the first arm with maximum expectation
-        return argmax(self.arm_to_expectation)
+    def predict(self, contexts: Optional[np.ndarray] = None) -> Union[Arm, List[Arm]]:
 
-    def predict_expectations(self, contexts: np.ndarray = None) -> Dict[Arm, Num]:
+        # Return the arm with maximum expectation
+        expectations = self.predict_expectations(contexts)
+        if isinstance(expectations, dict):
+            return argmax(expectations)
+        else:
+            return [argmax(exp) for exp in expectations]
+
+    def predict_expectations(self, contexts: Optional[np.ndarray] = None) -> Union[Dict[Arm, Num],
+                                                                                   List[Dict[Arm, Num]]]:
 
         # Return a copy of expectations dictionary from arms (key) to expectations (values)
-        return self.arm_to_expectation.copy()
+        if contexts is None or len(contexts) == 1:
+            return self.arm_to_expectation.copy()
+        else:
+            return [self.arm_to_expectation.copy() for _ in range(len(contexts))]
+
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        self._warm_start(arm_to_features, distance_quantile)
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        for cold_arm, warm_arm in cold_arm_to_warm_arm.items():
+            self.arm_to_sum[cold_arm] = deepcopy(self.arm_to_sum[warm_arm])
+            self.arm_to_count[cold_arm] = deepcopy(self.arm_to_count[warm_arm])
+            self.arm_to_mean[cold_arm] = deepcopy(self.arm_to_mean[warm_arm])
+            self.arm_to_expectation[cold_arm] = deepcopy(self.arm_to_expectation[warm_arm])
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
 
@@ -79,7 +107,11 @@ class _UCB1(BaseMAB):
         return arm_mean + alpha * math.sqrt((2 * math.log(total_count)) / arm_count)
 
     def _uptake_new_arm(self, arm: Arm, binarizer: Callable = None, scaler: Callable = None):
-
         self.arm_to_sum[arm] = 0
         self.arm_to_count[arm] = 0
         self.arm_to_mean[arm] = 0
+
+    def _drop_existing_arm(self, arm: Arm):
+        self.arm_to_sum.pop(arm)
+        self.arm_to_count.pop(arm)
+        self.arm_to_mean.pop(arm)

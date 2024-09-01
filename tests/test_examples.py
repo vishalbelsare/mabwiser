@@ -24,8 +24,8 @@ class ExampleTest(BaseTest):
         mab = MAB(list_of_arms, LearningPolicy.Popularity())
         mab.fit(decisions, rewards)
         mab.predict()
-        self.assertEqual("Arm2", mab.predict())
-        self.assertDictEqual({'Arm1': 0.38016528925619836, 'Arm2': 0.6198347107438016},
+        self.assertEqual("Arm1", mab.predict())
+        self.assertDictEqual({'Arm1': 0.9674354610872193, 'Arm2': 0.032564538912780716},
                              mab.predict_expectations())
 
     def test_random(self):
@@ -38,7 +38,7 @@ class ExampleTest(BaseTest):
                                 num_run=1,
                                 is_predict=True)
 
-        self.assertEqual(arm, 2)
+        self.assertEqual(arm, 1)
 
         layout_partial = [1, 2, 1, 2]
         revenue_partial = [0, 12, 7, 19]
@@ -59,7 +59,7 @@ class ExampleTest(BaseTest):
                                 num_run=1,
                                 is_predict=True)
 
-        self.assertEqual(arm, 1)
+        self.assertEqual(arm, 2)
 
         layout_partial = [1, 2, 1, 2]
         revenue_partial = [0, 12, 7, 19]
@@ -204,7 +204,7 @@ class ExampleTest(BaseTest):
                                 num_run=1,
                                 is_predict=True)
 
-        self.assertEqual(arm, 2)
+        self.assertEqual(arm, 1)
 
         layout_partial = [1, 2, 1, 2]
         revenue_partial = [0, 1, 0, 1]
@@ -247,7 +247,7 @@ class ExampleTest(BaseTest):
                                 num_run=1,
                                 is_predict=True)
 
-        self.assertEqual(arm, 1)
+        self.assertEqual(arm, 2)
 
     def test_ts_numpy(self):
         arm, mab = self.predict(arms=[1, 2],
@@ -258,7 +258,7 @@ class ExampleTest(BaseTest):
                                 num_run=1,
                                 is_predict=True)
 
-        self.assertEqual(arm, 1)
+        self.assertEqual(arm, 2)
 
     def test_approximate(self):
         train_df = pd.DataFrame({'ad': [1, 1, 1, 2, 4, 5, 3, 3, 2, 1, 4, 5, 3, 2, 5],
@@ -289,7 +289,7 @@ class ExampleTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertEqual(arms, [1, 1])
+        self.assertEqual(arms, [1, 4])
 
         mab.partial_fit(decisions=arms, rewards=test_df_revenue, contexts=test)
 

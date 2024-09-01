@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-from typing import Dict, Callable, List, NoReturn, Optional, Union
+from copy import deepcopy
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 
 from mabwiser.base_mab import BaseMAB
-from mabwiser.utils import reset, Arm, Num, _BaseRNG
+from mabwiser.utils import Arm, Num, _BaseRNG, argmax, reset
 
 
 class _Softmax(BaseMAB):
@@ -23,41 +24,67 @@ class _Softmax(BaseMAB):
         self.arm_to_mean = dict.fromkeys(self.arms, 0)
         self.arm_to_exponent = dict.fromkeys(self.arms, 0)
 
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Reset the sum, count, and expectations to zero
         reset(self.arm_to_sum, 0)
         reset(self.arm_to_count, 0)
         reset(self.arm_to_mean, 0)
 
+        # Reset warm started arms
+        self._reset_arm_to_status()
+
         # Calculate fit
         self._parallel_fit(decisions, rewards)
         self._expectation_operation()
+
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=False)
 
     def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray,
-                    contexts: Optional[np.ndarray] = None) -> NoReturn:
+                    contexts: Optional[np.ndarray] = None) -> None:
 
         # Calculate fit
         self._parallel_fit(decisions, rewards)
         self._expectation_operation()
 
-    def predict(self, contexts: np.ndarray = None) -> Arm:
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=True)
 
-        # Generate the stopping value in the range [0, 1)
-        stop = self.rng.rand()
+    def predict(self, contexts: Optional[np.ndarray] = None) -> Union[Arm, List[Arm]]:
 
-        # For each arm, add the probability to the cumulative sum
-        # until the stopping value is exceeded
-        cumulative = 0
-        for arm in self.arms:
-            cumulative += self.arm_to_expectation[arm]
-            if cumulative > stop:
-                return arm
+        # Return the arm with maximum expectation
+        expectations = self.predict_expectations(contexts)
+        if isinstance(expectations, dict):
+            return argmax(expectations)
+        else:
+            return [argmax(exp) for exp in expectations]
 
-    def predict_expectations(self, contexts: np.ndarray = None) -> Dict[Arm, Num]:
+    def predict_expectations(self, contexts: Optional[np.ndarray] = None) -> Union[Dict[Arm, Num],
+                                                                                   List[Dict[Arm, Num]]]:
 
-        # Return a copy of expectations dictionary from arms (key) to expectations (values)
-        return self.arm_to_expectation.copy()
+        # Return a random value between 0 and 1 for each arm that is "proportional" to the
+        # expectation of the arm and sums to 1 by sampling from a Dirichlet distribution.
+        # The Dirichlet distribution can be seen as a multivariate generalization of the Beta distribution.
+        # Add a very small epsilon to ensure each of the expectations is positive.
+        size = 1 if contexts is None else len(contexts)
+        alpha = [v + np.finfo(float).eps for v in self.arm_to_expectation.values()]
+        dirichlet_random_values = self.rng.dirichlet(alpha, size)
+        expectations = [dict(zip(self.arm_to_expectation.keys(), exp)).copy() for exp in dirichlet_random_values]
+        if size == 1:
+            return expectations[0]
+        else:
+            return expectations
+
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        self._warm_start(arm_to_features, distance_quantile)
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        for cold_arm, warm_arm in cold_arm_to_warm_arm.items():
+            self.arm_to_sum[cold_arm] = deepcopy(self.arm_to_sum[warm_arm])
+            self.arm_to_count[cold_arm] = deepcopy(self.arm_to_count[warm_arm])
+            self.arm_to_mean[cold_arm] = deepcopy(self.arm_to_mean[warm_arm])
+        self._expectation_operation()
 
     def _expectation_operation(self):
 
@@ -93,6 +120,15 @@ class _Softmax(BaseMAB):
         self.arm_to_count[arm] = 0
         self.arm_to_mean[arm] = 0
         self.arm_to_exponent[arm] = 0
+
+        # Recalculate the expected values
+        self._expectation_operation()
+
+    def _drop_existing_arm(self, arm: Arm):
+        self.arm_to_sum.pop(arm)
+        self.arm_to_count.pop(arm)
+        self.arm_to_mean.pop(arm)
+        self.arm_to_exponent.pop(arm)
 
         # Recalculate the expected values
         self._expectation_operation()

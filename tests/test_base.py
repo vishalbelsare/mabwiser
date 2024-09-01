@@ -6,7 +6,7 @@ from typing import List, Union, Optional
 import numpy as np
 import pandas as pd
 
-from mabwiser.mab import MAB, LearningPolicy, NeighborhoodPolicy
+from mabwiser.mab import MAB, LearningPolicy, NeighborhoodPolicy, LearningPolicyType, NeighborhoodPolicyType
 from mabwiser.utils import Arm, Num
 
 
@@ -36,7 +36,13 @@ class BaseTest(unittest.TestCase):
            LearningPolicy.UCB1(alpha=1.0),
            LearningPolicy.UCB1(alpha=5)]
 
-    para_lps = [LearningPolicy.LinTS(alpha=0.00001, l2_lambda=1),
+    para_lps = [LearningPolicy.LinGreedy(epsilon=0, l2_lambda=1),
+                LearningPolicy.LinGreedy(epsilon=0.5, l2_lambda=1),
+                LearningPolicy.LinGreedy(epsilon=1, l2_lambda=1),
+                LearningPolicy.LinGreedy(epsilon=0, l2_lambda=0.5),
+                LearningPolicy.LinGreedy(epsilon=0.5, l2_lambda=0.5),
+                LearningPolicy.LinGreedy(epsilon=1, l2_lambda=0.5),
+                LearningPolicy.LinTS(alpha=0.00001, l2_lambda=1),
                 LearningPolicy.LinTS(alpha=0.5, l2_lambda=1),
                 LearningPolicy.LinTS(alpha=1, l2_lambda=1),
                 LearningPolicy.LinTS(alpha=0.00001, l2_lambda=0.5),
@@ -70,12 +76,8 @@ class BaseTest(unittest.TestCase):
     def predict(arms: List[Arm],
                 decisions: Union[List, np.ndarray, pd.Series],
                 rewards: Union[List, np.ndarray, pd.Series],
-                learning_policy: Union[LearningPolicy.EpsilonGreedy, LearningPolicy.Popularity, LearningPolicy.Random,
-                                       LearningPolicy.Softmax, LearningPolicy.ThompsonSampling, LearningPolicy.UCB1,
-                                       LearningPolicy.LinTS, LearningPolicy.LinUCB],
-                neighborhood_policy: Union[None, NeighborhoodPolicy.Clusters, NeighborhoodPolicy.KNearest,
-                                           NeighborhoodPolicy.LSHNearest, NeighborhoodPolicy.Radius,
-                                           NeighborhoodPolicy.TreeBandit] = None,
+                learning_policy: LearningPolicyType,
+                neighborhood_policy: NeighborhoodPolicyType = None,
                 context_history: Union[None, List[Num], List[List[Num]], np.ndarray, pd.DataFrame, pd.Series] = None,
                 contexts: Union[None, List[Num], List[List[Num]], np.ndarray, pd.DataFrame, pd.Series] = None,
                 seed: Optional[int] = 123456,
@@ -108,15 +110,15 @@ class BaseTest(unittest.TestCase):
         else:
 
             # Return: expectations(s) and the MAB instance
-            expectations = [mab.predict_expectations(contexts)for _ in range(num_run)]
+            expectations = [mab.predict_expectations(contexts) for _ in range(num_run)]
             return expectations[0] if num_run == 1 else expectations, mab
 
     @staticmethod
-    def is_compatible(lp, np):
+    def is_compatible(learning_policy, neighborhood_policy):
 
         # Special case for TreeBandit lp/np compatibility
-        if isinstance(np, NeighborhoodPolicy.TreeBandit):
-            return np._is_compatible(lp)
+        if isinstance(neighborhood_policy, NeighborhoodPolicy.TreeBandit):
+            return neighborhood_policy._is_compatible(learning_policy)
 
         return True
 

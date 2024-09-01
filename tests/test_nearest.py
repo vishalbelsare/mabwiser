@@ -115,7 +115,7 @@ class NearestTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [4, 1])
+        self.assertListEqual(arms, [2, 1])
 
     def test_thompson_k2(self):
 
@@ -133,7 +133,7 @@ class NearestTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [4, 4])
+        self.assertListEqual(arms, [2, 1])
 
     def test_ucb_k2(self):
 
@@ -169,7 +169,7 @@ class NearestTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [3, 2])
+        self.assertListEqual(arms, [1, 3])
 
     def test_max_k(self):
 
@@ -243,7 +243,7 @@ class NearestTest(BaseTest):
                                  is_predict=True)
 
         self.assertTrue(mab._imp.lp.is_contextual_binarized)
-        self.assertListEqual(arms, [4, 4])
+        self.assertListEqual(arms, [2, 1])
         self.assertEqual(len(mab._imp.decisions), 10)
         self.assertEqual(len(mab._imp.rewards), 10)
         self.assertEqual(len(mab._imp.contexts), 10)
@@ -260,7 +260,7 @@ class NearestTest(BaseTest):
         self.assertEqual(len(mab._imp.contexts), 13)
         self.assertEqual(np.ndim(mab._imp.decisions), 1)
         arm = mab.predict([[0, 1, 2, 3, 5]])
-        self.assertEqual(arm, 3)
+        self.assertEqual(arm, 2)
         self.assertListEqual(list(set(mab._imp.rewards)), [0, 1])
 
     def test_fit_twice_thompson_thresholds(self):
@@ -285,7 +285,7 @@ class NearestTest(BaseTest):
                                  is_predict=True)
 
         self.assertTrue(mab._imp.lp.is_contextual_binarized)
-        self.assertListEqual(arms, [4, 4])
+        self.assertListEqual(arms, [2, 1])
         self.assertEqual(len(mab._imp.decisions), 10)
         self.assertEqual(len(mab._imp.rewards), 10)
         self.assertEqual(len(mab._imp.contexts), 10)
@@ -323,3 +323,54 @@ class NearestTest(BaseTest):
         self.assertTrue(5 in mab._imp.arms)
         self.assertTrue(5 in mab._imp.lp.arms)
         self.assertTrue(5 in mab._imp.lp.arm_to_expectation.keys())
+
+    def test_remove_arm(self):
+        arms, mab = self.predict(arms=[1, 2, 3, 4],
+                                 decisions=[1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
+                                 rewards=[0, 1, 1, 0, 0, 0, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.EpsilonGreedy(epsilon=0),
+                                 neighborhood_policy=NeighborhoodPolicy.KNearest(2),
+                                 context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                  [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                  [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                                  [0, 2, 1, 0, 0]],
+                                 contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertTrue(mab.arms is mab._imp.arms)
+        self.assertTrue(mab.arms is mab._imp.lp.arms)
+        mab.remove_arm(3)
+        self.assertTrue(3 not in mab.arms)
+        self.assertTrue(3 not in mab._imp.arms)
+        self.assertTrue(3 not in mab._imp.lp.arms)
+        self.assertTrue(3 not in mab._imp.lp.arm_to_expectation)
+
+    def test_warm_start(self):
+        exps, mab = self.predict(arms=[1, 2, 3, 4],
+                                 decisions=[1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
+                                 rewards=[0, 1, 1, 0, 0, 0, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.EpsilonGreedy(epsilon=0),
+                                 neighborhood_policy=NeighborhoodPolicy.KNearest(3),
+                                 context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                  [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                  [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                                  [0, 2, 1, 0, 0]],
+                                 contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=False)
+
+        # Before warm start
+        self.assertDictEqual(exps[0], {1: 0.0, 2: 0.0, 3: 1.0, 4: 0})
+        self.assertDictEqual(exps[1], {1: 1.0, 2: 0.0, 3: 0, 4: 0})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5], 4: [0, 1]}, distance_quantile=0.5)
+
+        # Predict expectations
+        exps = mab.predict_expectations([[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]])
+
+        # After warm start
+        self.assertDictEqual(exps[0], {1: 0.0, 2: 0.0, 3: 1.0, 4: 0})
+        self.assertDictEqual(exps[1], {1: 1.0, 2: 0.0, 3: 0, 4: 0})

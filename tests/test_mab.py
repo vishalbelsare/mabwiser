@@ -2,11 +2,9 @@
 
 import os
 import pickle
-from copy import deepcopy
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 
 from mabwiser.mab import MAB, LearningPolicy, NeighborhoodPolicy
 from tests.test_base import BaseTest
@@ -46,17 +44,11 @@ class MABTest(BaseTest):
         mab = MAB([0, 1], lp)
         self.assertEqual(lp.epsilon, mab.learning_policy.epsilon)
 
-        data = np.array([[1, 2, 3], [3, 2, 1]])
-        sc = StandardScaler()
-        sc.fit(data)
-        arm_to_scaler = {0: sc, 1: sc}
-
-        lp = LearningPolicy.LinUCB(alpha=2.0, l2_lambda=0.3, arm_to_scaler=arm_to_scaler)
+        lp = LearningPolicy.LinUCB(alpha=2.0, l2_lambda=0.3, scale=True)
         mab = MAB([0, 1], lp)
         self.assertEqual(lp.alpha, mab.learning_policy.alpha)
         self.assertEqual(lp.l2_lambda, mab.learning_policy.l2_lambda)
-        self.assertIs(sc, mab.learning_policy.arm_to_scaler[0])
-        self.assertIs(sc, mab.learning_policy.arm_to_scaler[1])
+        self.assertEqual(lp.scale, mab.learning_policy.scale)
 
         lp = LearningPolicy.Softmax(tau=0.5)
         mab = MAB([0, 1], lp)
@@ -1051,7 +1043,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [3, 3, 3, 3])
+        self.assertEqual(arms, [3, 3, 1, 3])
         self.assertIs(mab._rng, mab._imp.rng)
 
         arms, mab = self.predict(arms=[1, 2, 3],
@@ -1063,7 +1055,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [2, 3, 3, 3])
+        self.assertEqual(arms, [3, 3, 3, 2])
         self.assertIs(mab._rng, mab._imp.rng)
 
         arms, mab = self.predict(arms=[1, 2, 3],
@@ -1075,7 +1067,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [3, 3, 3, 2])
+        self.assertEqual(arms, [3, 1, 1, 3])
         self.assertIs(mab._rng, mab._imp.rng)
 
         arms, mab = self.predict(arms=[1, 2, 3],
@@ -1087,7 +1079,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [3, 3, 3, 3])
+        self.assertEqual(arms, [3, 3, 1, 2])
         self.assertIs(mab._rng, mab._imp.rng)
 
         arms, mab = self.predict(arms=[1, 2, 3],
@@ -1099,7 +1091,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [2, 1, 1, 3])
+        self.assertEqual(arms, [3, 3, 3, 2])
         self.assertIs(mab._rng, mab._imp.rng)
 
         arms, mab = self.predict(arms=[1, 2, 3],
@@ -1111,7 +1103,7 @@ class MABTest(BaseTest):
                                  is_predict=True)
 
         self.assertEqual(len(arms), 4)
-        self.assertEqual(arms, [3, 3, 3, 2])
+        self.assertEqual(arms, [3, 1, 1, 3])
         self.assertIs(mab._rng, mab._imp.rng)
 
     def test_set_rng(self):
@@ -1775,3 +1767,249 @@ class MABTest(BaseTest):
                 self.assertListEqual(pe1, pe2)
 
         os.remove('mab.pkl')
+
+    #################################################
+    # Test arm_status
+    ################################################
+
+    def test_status_add_arm(self):
+
+        cold_arm_status = {'is_trained': False, 'is_warm': False, 'warm_started_by': None}
+
+        for lp in BaseTest.lps:
+            mab = MAB([1, 2], lp)
+
+            # Add arm
+            mab.add_arm(3)
+            self.assertEqual(mab._imp.arm_to_status[3], cold_arm_status)
+
+        for cp in BaseTest.nps:
+            for lp in BaseTest.lps:
+
+                if not self.is_compatible(lp, cp):
+                    continue
+
+                mab = MAB([1, 2], lp, cp)
+
+                # Add arm
+                mab.add_arm(3)
+                self.assertEqual(mab._imp.arm_to_status[3], cold_arm_status)
+
+    def test_status_remove_arm(self):
+
+        cold_arm_status = {'is_trained': False, 'is_warm': False, 'warm_started_by': None}
+
+        for lp in BaseTest.lps:
+            mab = MAB([1, 2], lp)
+            self.assertEqual(mab._imp.arm_to_status[1], cold_arm_status)
+            self.assertEqual(mab._imp.arm_to_status[2], cold_arm_status)
+
+            # Remove arm
+            mab.remove_arm(1)
+            self.assertTrue(1 not in mab._imp.arm_to_status)
+
+        for cp in BaseTest.nps:
+            for lp in BaseTest.lps:
+
+                if not self.is_compatible(lp, cp):
+                    continue
+
+                mab = MAB([1, 2], lp, cp)
+                self.assertEqual(mab._imp.arm_to_status[1], cold_arm_status)
+                self.assertEqual(mab._imp.arm_to_status[2], cold_arm_status)
+
+                # Remove arm
+                mab.remove_arm(1)
+                self.assertTrue(1 not in mab._imp.arm_to_status)
+
+    def test_status_fit(self):
+
+        for lp in MABTest.lps:
+            if lp == LearningPolicy.Random():
+                continue
+            arms, mab = self.predict(arms=[1, 2, 3],
+                                     decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                                     rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                                     learning_policy=lp,
+                                     seed=123456,
+                                     num_run=1,
+                                     is_predict=True)
+            self.assertEqual(mab._imp.arm_to_status[1]["is_trained"], True)
+            self.assertEqual(mab._imp.arm_to_status[2]["is_trained"], True)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+
+        for lp in MABTest.para_lps:
+            arms, mab = self.predict(arms=[1, 2, 3],
+                                     decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                                     rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                                     learning_policy=lp,
+                                     context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                      [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                      [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3]],
+                                     contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                     seed=123456,
+                                     num_run=1,
+                                     is_predict=True)
+            self.assertEqual(mab._imp.arm_to_status[1]["is_trained"], True)
+            self.assertEqual(mab._imp.arm_to_status[2]["is_trained"], True)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+
+    def test_status_warm_start(self):
+        for lp in MABTest.lps:
+            if lp == LearningPolicy.Random():
+                continue
+            arms, mab = self.predict(arms=[1, 2, 3],
+                                     decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                                     rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                                     learning_policy=lp,
+                                     seed=123456,
+                                     num_run=1,
+                                     is_predict=True)
+
+            # Before warm start
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_warm"], False)
+            self.assertListEqual(mab.cold_arms, [3])
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_warm"], True)
+            self.assertListEqual(mab.cold_arms, list())
+
+            # Warm start again
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_warm"], True)
+            self.assertListEqual(mab.cold_arms, list())
+
+        for lp in MABTest.para_lps:
+            arms, mab = self.predict(arms=[1, 2, 3],
+                                     decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                                     rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                                     learning_policy=lp,
+                                     context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                      [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                      [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3]],
+                                     contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                     seed=123456,
+                                     num_run=1,
+                                     is_predict=True)
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_warm"], True)
+            self.assertListEqual(mab.cold_arms, list())
+
+            # Warm start again
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_trained"], False)
+            self.assertEqual(mab._imp.arm_to_status[3]["is_warm"], True)
+            self.assertListEqual(mab.cold_arms, list())
+
+    def test_status_fit_warmstart(self):
+
+        for lp in MABTest.lps:
+            if lp == LearningPolicy.Random():
+                continue
+            mab = MAB([1, 2, 3], lp)
+            mab.fit(decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1], rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": False, "is_warm": False, "warm_started_by": None})
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": False, "is_warm": True, "warm_started_by": 1})
+
+            # Partial fit
+            mab.partial_fit(decisions=[1, 1, 1, 2, 2, 2, 3, 3, 3], rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3], {"is_trained": True, "is_warm": True, "warm_started_by": 1})
+
+            # Fit from scratch
+            mab.fit(decisions=[1, 1, 1, 2, 2, 2, 3, 3, 3], rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+
+        for lp in MABTest.para_lps:
+            mab = MAB([1, 2, 3], lp)
+            mab.fit(decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                    rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                    contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                              [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                              [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3]])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": False, "is_warm": False, "warm_started_by": None})
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": False, "is_warm": True, "warm_started_by": 1})
+
+            # Partial fit
+            mab.partial_fit(decisions=[1, 1, 1, 2, 2, 2, 3, 3, 3],
+                            rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                            contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                      [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                      [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3]])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3], {"is_trained": True, "is_warm": True, "warm_started_by": 1})
+
+            # Fit from scratch
+            mab.fit(decisions=[1, 1, 1, 2, 2, 2, 3, 3, 3],
+                    rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                    contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                              [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                              [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3]])
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+
+            # Warm start
+            mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+            self.assertDictEqual(mab._imp.arm_to_status[1],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[2],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})
+            self.assertDictEqual(mab._imp.arm_to_status[3],
+                                 {"is_trained": True, "is_warm": False, "warm_started_by": None})

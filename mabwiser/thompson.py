@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: Apache-2.0
 
-from typing import Dict, List, NoReturn, Optional, Callable
+from copy import deepcopy
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 
 from mabwiser.base_mab import BaseMAB
-from mabwiser.utils import Arm, Num, reset, argmax, _BaseRNG
+from mabwiser.utils import Arm, Num, _BaseRNG, argmax, reset
 
 
 class _ThompsonSampling(BaseMAB):
@@ -21,7 +22,7 @@ class _ThompsonSampling(BaseMAB):
         self.arm_to_success_count = dict.fromkeys(self.arms, 1)
         self.arm_to_fail_count = dict.fromkeys(self.arms, 1)
 
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # If rewards are non binary, convert them
         rewards = self._get_binary_rewards(decisions, rewards)
@@ -30,13 +31,19 @@ class _ThompsonSampling(BaseMAB):
         reset(self.arm_to_success_count, 1)
         reset(self.arm_to_fail_count, 1)
 
+        # Reset warm started arms
+        self._reset_arm_to_status()
+
         # Calculate fit
         self._parallel_fit(decisions, rewards)
+
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=False)
 
         # Leave the calculation of expectations to predict methods
 
     def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray,
-                    contexts: Optional[np.ndarray] = None) -> NoReturn:
+                    contexts: Optional[np.ndarray] = None) -> None:
 
         # If rewards are non binary, convert them
         rewards = self._get_binary_rewards(decisions, rewards)
@@ -44,20 +51,42 @@ class _ThompsonSampling(BaseMAB):
         # Calculate fit
         self._parallel_fit(decisions, rewards)
 
-    def predict(self, contexts: np.ndarray = None) -> Arm:
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=True)
 
-        # Return the arm with maximum expectation. If multiple max value exists, return the first one
-        return argmax(self.predict_expectations())
+    def predict(self, contexts: Optional[np.ndarray] = None) -> Union[Arm, List[Arm]]:
 
-    def predict_expectations(self, contexts: np.ndarray = None) -> Dict[Arm, Num]:
+        # Return the arm with maximum expectation
+        expectations = self.predict_expectations(contexts)
+        if isinstance(expectations, dict):
+            return argmax(expectations)
+        else:
+            return [argmax(exp) for exp in expectations]
 
-        # Expectation of each arm is a random sample from beta distribution with  success and fail counters
+    def predict_expectations(self, contexts: Optional[np.ndarray] = None) -> Union[Dict[Arm, Num],
+                                                                                   List[Dict[Arm, Num]]]:
+
+        # Expectation of each arm is a random sample from beta distribution with success and fail counters.
+        # If contexts is None or has length of 1 generate single arm to expectations,
+        # otherwise use vectorized functions to generate a list of arm to expectations with same length as contexts.
+        size = 1 if contexts is None else len(contexts)
+        arm_to_random_beta = dict()
         for arm in self.arm_to_expectation:
-            self.arm_to_expectation[arm] = self.rng.beta(self.arm_to_success_count[arm],
-                                                         self.arm_to_fail_count[arm])
+            arm_to_random_beta[arm] = self.rng.beta(self.arm_to_success_count[arm], self.arm_to_fail_count[arm], size)
+        arm_to_expectation = [{arm: arm_to_random_beta[arm][i] for arm in self.arms} for i in range(size)]
+        self.arm_to_expectation = arm_to_expectation[-1]
+        if size == 1:
+            return arm_to_expectation[0]
+        else:
+            return arm_to_expectation
 
-        # Return a copy of expectations dictionary from arms (key) to expectations (values)
-        return self.arm_to_expectation.copy()
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        self._warm_start(arm_to_features, distance_quantile)
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        for cold_arm, warm_arm in cold_arm_to_warm_arm.items():
+            self.arm_to_success_count[cold_arm] = deepcopy(self.arm_to_success_count[warm_arm])
+            self.arm_to_fail_count[cold_arm] = deepcopy(self.arm_to_fail_count[warm_arm])
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
 
@@ -86,3 +115,7 @@ class _ThompsonSampling(BaseMAB):
             self.binarizer = binarizer
         self.arm_to_success_count[arm] = 1
         self.arm_to_fail_count[arm] = 1
+
+    def _drop_existing_arm(self, arm: Arm):
+        self.arm_to_success_count.pop(arm)
+        self.arm_to_fail_count.pop(arm)

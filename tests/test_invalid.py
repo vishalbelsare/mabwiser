@@ -45,6 +45,12 @@ class InvalidTest(BaseTest):
             def _uptake_new_arm(self, arm, binarizer=None, scaler=None):
                 pass
 
+            def _drop_existing_arm(self, arm):
+                pass
+
+            def _copy_arms(self, cold_arm_to_warm_arm):
+                pass
+
             def fit(self, decisions, rewards, contexts=None):
                 pass
 
@@ -55,6 +61,9 @@ class InvalidTest(BaseTest):
                 pass
 
             def predict_expectations(self, contexts=None):
+                pass
+
+            def warm_start(self, arm_to_features, distance_quantile):
                 pass
 
         mab = MAB([0, 1], learning_policy=LearningPolicy.EpsilonGreedy())
@@ -69,6 +78,10 @@ class InvalidTest(BaseTest):
     def test_invalid_epsilon_value(self):
         with self.assertRaises(ValueError):
             MAB(['a', 'b'], LearningPolicy.EpsilonGreedy(epsilon=2))
+        with self.assertRaises(ValueError):
+            MAB(['a', 'b'], LearningPolicy.LinGreedy(epsilon=-1))
+        with self.assertRaises(ValueError):
+            MAB(['a', 'b'], LearningPolicy.LinGreedy(epsilon=2))
 
     def test_invalid_rewards_to_binary_type(self):
         thresholds = {1: 1, 'b': 1}
@@ -155,6 +168,18 @@ class InvalidTest(BaseTest):
             self.predict(arms=[1, 2, 3],
                          decisions=[1, 1, 1],
                          rewards=[0, 0, 0],
+                         learning_policy=LearningPolicy.LinGreedy(l2_lambda=None),
+                         neighborhood_policy=NeighborhoodPolicy.KNearest(2),
+                         context_history=np.array([1, 1, 1]),
+                         contexts=np.array([[1, 1]]),
+                         seed=123456,
+                         num_run=1,
+                         is_predict=True)
+
+        with self.assertRaises(TypeError):
+            self.predict(arms=[1, 2, 3],
+                         decisions=[1, 1, 1],
+                         rewards=[0, 0, 0],
                          learning_policy=LearningPolicy.LinUCB(alpha=1, l2_lambda=None),
                          neighborhood_policy=NeighborhoodPolicy.KNearest(2),
                          context_history=np.array([1, 1, 1]),
@@ -203,6 +228,9 @@ class InvalidTest(BaseTest):
 
         with self.assertRaises(TypeError):
             MAB(['a', 'b'], LearningPolicy.Softmax(alpha=2))
+
+        with self.assertRaises(TypeError):
+            MAB(['a', 'b'], LearningPolicy.LinGreedy(alpha=1))
 
         with self.assertRaises(TypeError):
             MAB(['a', 'b'], LearningPolicy.LinUCB(tau=1))
@@ -595,13 +623,9 @@ class InvalidTest(BaseTest):
                          is_predict=True,
                          n_jobs=0)
 
-    def test_invalid_add_arm_scaler(self):
-
-        scaler = StandardScaler()
-        arm_to_scaler = {0: deepcopy(scaler), 1: deepcopy(scaler)}
-        mab = MAB([0, 1], LearningPolicy.LinUCB(arm_to_scaler=arm_to_scaler))
+    def test_invalid_scale(self):
         with self.assertRaises(TypeError):
-            mab.add_arm(2, scaler=deepcopy(scaler))
+            mab = MAB([0, 1], LearningPolicy.LinUCB(scale=1))
 
     def test_convert_array_invalid(self):
         df = pd.DataFrame({'a': [1, 1, 1, 1, 1]})
@@ -829,5 +853,22 @@ class InvalidTest(BaseTest):
         with self.assertRaises(ValueError):
             sim._set_stats('validation', decisions, rewards)
 
+    def test_invalid_warm_start_features(self):
+        mab = MAB(arms=[1, 2, 3], learning_policy=LearningPolicy.EpsilonGreedy())
+        with self.assertRaises(TypeError):
+            mab.warm_start([0.1, 0.2, 0.3], 0.5)
 
+    def test_invalid_warm_start_features_none(self):
+        mab = MAB(arms=[1, 2, 3], learning_policy=LearningPolicy.EpsilonGreedy())
+        with self.assertRaises(TypeError):
+            mab.warm_start(None, 0.5)
 
+    def test_invalid_warm_start_quantile_value(self):
+        mab = MAB(arms=[1, 2, 3], learning_policy=LearningPolicy.EpsilonGreedy())
+        with self.assertRaises(ValueError):
+            mab.warm_start({1: [1, 0.5], 2: [1, 0], 3: [0.2, 0.5]}, 50.)
+
+    def test_invalid_warm_start_quantile_none(self):
+        mab = MAB(arms=[1, 2, 3], learning_policy=LearningPolicy.EpsilonGreedy())
+        with self.assertRaises(TypeError):
+            mab.warm_start({1: [1, 0.5], 2: [1, 0], 3: [0.2, 0.5]}, None)

@@ -114,7 +114,7 @@ class RadiusTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [4, 1])
+        self.assertListEqual(arms, [2, 1])
 
     def test_thompson_r2(self):
 
@@ -132,7 +132,7 @@ class RadiusTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [3, 4])
+        self.assertListEqual(arms, [2, 1])
 
     def test_ucb_r2(self):
 
@@ -168,7 +168,7 @@ class RadiusTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [3, 3])
+        self.assertListEqual(arms, [1, 3])
 
     def test_no_neighbors(self):
 
@@ -187,7 +187,7 @@ class RadiusTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [4, 3, 4, 1, 4])
+        self.assertListEqual(arms, [3, 1, 1, 4, 1])
 
         arms, mab = self.predict(arms=[1, 2, 3, 4],
                                  decisions=[1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
@@ -204,7 +204,7 @@ class RadiusTest(BaseTest):
                                  num_run=1,
                                  is_predict=True)
 
-        self.assertListEqual(arms, [4, 2, 1, 4, 4])
+        self.assertListEqual(arms, [2, 4, 1, 2, 2])
 
     def test_no_neighbors_expectations(self):
 
@@ -300,7 +300,7 @@ class RadiusTest(BaseTest):
                                  is_predict=True)
 
         self.assertTrue(mab._imp.lp.is_contextual_binarized)
-        self.assertListEqual(arms, [3, 4])
+        self.assertListEqual(arms, [2, 1])
         self.assertEqual(len(mab._imp.decisions), 10)
         self.assertEqual(len(mab._imp.rewards), 10)
         self.assertEqual(len(mab._imp.contexts), 10)
@@ -340,7 +340,7 @@ class RadiusTest(BaseTest):
                                  is_predict=True)
 
         self.assertTrue(mab._imp.lp.is_contextual_binarized)
-        self.assertListEqual(arms, [3, 4])
+        self.assertListEqual(arms, [2, 1])
         self.assertEqual(len(mab._imp.decisions), 10)
         self.assertEqual(len(mab._imp.rewards), 10)
         self.assertEqual(len(mab._imp.contexts), 10)
@@ -396,8 +396,8 @@ class RadiusTest(BaseTest):
                                  is_predict=True)
 
         # 3rd arm was never seen but picked up by random neighborhood in both tests
-        self.assertListEqual(arms[0], [3, 3])
-        self.assertListEqual(arms[1], [1, 1])
+        self.assertListEqual(arms[0], [3, 1])
+        self.assertListEqual(arms[1], [1, 3])
 
     def test_greedy0_no_nhood_predict_weighted(self):
 
@@ -417,8 +417,8 @@ class RadiusTest(BaseTest):
                                  is_predict=True)
 
         # 2nd arm is weighted highly but 3rd is picked too
-        self.assertListEqual(arms[0], [3, 2])
-        self.assertListEqual(arms[1], [2, 2])
+        self.assertListEqual(arms[0], [2, 2])
+        self.assertListEqual(arms[1], [3, 3])
 
     def test_greedy0_no_nhood_expectation_nan(self):
 
@@ -439,3 +439,52 @@ class RadiusTest(BaseTest):
         # When there are no neighborhoods, expectations will be nan
         self.assertDictEqual(arms[0], {1: np.nan, 2: np.nan, 3: np.nan})
         self.assertDictEqual(arms[1], {1: np.nan, 2: np.nan, 3: np.nan})
+
+    def test_remove_arm(self):
+        arms, mab = self.predict(arms=[1, 2, 3, 4],
+                                 decisions=[1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
+                                 rewards=[0, 1, 1, 0, 0, 0, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.EpsilonGreedy(epsilon=0),
+                                 neighborhood_policy=NeighborhoodPolicy.Radius(2),
+                                 context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                  [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                  [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                                  [0, 2, 1, 0, 0]],
+                                 contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertTrue(mab.arms is mab._imp.arms)
+        self.assertTrue(mab.arms is mab._imp.lp.arms)
+        mab.remove_arm(3)
+        self.assertTrue(3 not in mab.arms)
+        self.assertTrue(3 not in mab._imp.arms)
+        self.assertTrue(3 not in mab._imp.lp.arms)
+        self.assertTrue(3 not in mab._imp.lp.arm_to_expectation)
+
+    def test_warm_start(self):
+        exps, mab = self.predict(arms=[1, 2, 3, 4],
+                                 decisions=[1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
+                                 rewards=[0, 1, 1, 0, 0, 0, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.EpsilonGreedy(epsilon=0),
+                                 neighborhood_policy=NeighborhoodPolicy.Radius(2),
+                                 context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                  [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                  [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                                  [0, 2, 1, 0, 0]],
+                                 contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=False)
+
+        # Before warm start
+        self.assertDictEqual(exps[0], {1: 0.0, 2: 0.0, 3: 0.5, 4: 0})
+        self.assertDictEqual(exps[1], {1: 1.0, 2: 0.0, 3: 1.0, 4: 0})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5], 4: [0, 1]}, distance_quantile=0.5)
+        exps = mab.predict_expectations([[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]])
+
+        # After warm start
+        self.assertDictEqual(exps[0], {1: 0.0, 2: 0.0, 3: 0.5, 4: 0})
+        self.assertDictEqual(exps[1], {1: 1.0, 2: 0.0, 3: 1.0, 4: 0})

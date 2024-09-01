@@ -2,43 +2,71 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from copy import deepcopy
-from typing import Callable, Dict, List, NoReturn, Optional
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 from mabwiser.base_mab import BaseMAB
-from mabwiser.utils import Arm, Num, argmax, _BaseRNG
+from mabwiser.utils import Arm, Num, _BaseRNG
+
+SCALER_TOLERANCE = 1e-6
+
+
+def fix_small_variance(scaler: StandardScaler) -> None:
+    """
+    Set variances close to zero to be equal to one in trained standard scaler to make computations stable.
+
+    :param scaler: the scaler to check and fix variances for
+    """
+    if hasattr(scaler, 'scale_') and hasattr(scaler, 'var_'):
+        # Get a mask to pull indices where std smaller than scaler_tolerance
+        mask = scaler.scale_ <= SCALER_TOLERANCE
+
+        # Fix standard deviation
+        scaler.scale_[mask] = 1.0e+00
+
+        # Fix variance accordingly. var_ is allowed to be 0 in scaler.
+        # This helps to track if scale_ are set as ones due to zeros in variances.
+        scaler.var_[mask] = 0.0e+00
 
 
 class _RidgeRegression:
 
-    def __init__(self, rng: _BaseRNG, l2_lambda: Num = 1.0, alpha: Num = 1.0,
-                 scaler: Optional[Callable] = None):
+    def __init__(self, rng: _BaseRNG, alpha: Num = 1.0, l2_lambda: Num = 1.0, scale: bool = False):
 
         # Ridge Regression: https://onlinecourses.science.psu.edu/stat857/node/155/
         self.rng = rng                      # random number generator
-        self.l2_lambda = l2_lambda          # regularization parameter
         self.alpha = alpha                  # exploration parameter
-        self.scaler = scaler                # standard scaler object
+        self.l2_lambda = l2_lambda          # regularization parameter
+        self.scale = scale                  # scale contexts
 
         self.beta = None                    # (XtX + l2_lambda * I_d)^-1 * Xty = A^-1 * Xty
         self.A = None                       # (XtX + l2_lambda * I_d)
         self.A_inv = None                   # (XtX + l2_lambda * I_d)^-1
         self.Xty = None
+        self.scaler = None
 
-    def init(self, num_features):
+    def init(self, num_features: int):
         # By default, assume that
         # A is the identity matrix and Xty is set to 0
         self.Xty = np.zeros(num_features)
         self.A = self.l2_lambda * np.identity(num_features)
         self.A_inv = self.A.copy()
         self.beta = np.dot(self.A_inv, self.Xty)
+        self.scaler = StandardScaler() if self.scale else None
 
-    def fit(self, X, y):
+    def fit(self, X: np.ndarray, y: np.ndarray):
 
         # Scale
         if self.scaler is not None:
-            X = self.scaler.transform(X.astype('float64'))
+            X = X.astype('float64')
+            if not hasattr(self.scaler, 'scale_'):
+                self.scaler.fit(X)
+            else:
+                self.scaler.partial_fit(X)
+            fix_small_variance(self.scaler)
+            X = self.scaler.transform(X)
 
         # X transpose
         Xt = X.T
@@ -53,7 +81,7 @@ class _RidgeRegression:
         # Recalculate beta coefficients
         self.beta = np.dot(self.A_inv, self.Xty)
 
-    def predict(self, x):
+    def predict(self, x: np.ndarray):
 
         # Scale
         if self.scaler is not None:
@@ -62,124 +90,106 @@ class _RidgeRegression:
         # Calculate default expectation y = x * b
         return np.dot(x, self.beta)
 
-    def _scale_predict_context(self, x):
-        # Reshape 1D array to 2D
-        x = x.reshape(1, -1)
+    def _scale_predict_context(self, x: np.ndarray):
+        if not hasattr(self.scaler, 'scale_'):
+            return x
 
         # Transform and return to previous shape. Convert to float64 to suppress any type warnings.
-        return self.scaler.transform(x.astype('float64')).reshape(-1)
+        return self.scaler.transform(x.astype('float64'))
 
 
 class _LinTS(_RidgeRegression):
 
-    def __init__(self, rng: _BaseRNG, l2_lambda: Num = 1.0, alpha: Num = 1.0,
-                 scaler: Optional[Callable] = None):
-        super().__init__(rng, l2_lambda, alpha, scaler)
-
-        # Set covariance to none
-        self.covar_decomposed = None
-
-    def init(self, num_features):
-        super().init(num_features)
-
-        # Calculate covariance
-        self.covar_decomposed = self._cholesky()
-
-    def fit(self, X, y):
-        super().fit(X, y)
-
-        # Calculate covariance
-        self.covar_decomposed = self._cholesky()
-
-    def predict(self, x):
-
+    def predict(self, x: np.ndarray):
         # Scale
         if self.scaler is not None:
             x = self._scale_predict_context(x)
 
-        # Multivariate Normal Sampling
-        # Adapted from the implementation in numpy.random.generator.multivariate_normal version 1.18.0
-        # Uses the cholesky implementation from numpy.linalg instead of numpy.dual
-        sampled_norm = self.rng.standard_normal(self.beta.shape[0])
-
-        # Randomly sample coefficients from Normal Distribution N(mean=beta, std=covar_decomposed)
-        beta_sampled = self.beta + np.dot(sampled_norm, self.covar_decomposed)
+        # Randomly sample coefficients from multivariate normal distribution
+        # Covariance is enhanced with the exploration factor
+        # Generates  random samples for all contexts in one single go. type(beta_sampled): np.ndarray
+        beta_sampled = self.rng.multivariate_normal(self.beta, np.square(self.alpha) * self.A_inv, size=x.shape[0])
 
         # Calculate expectation y = x * beta_sampled
-        return np.dot(x, beta_sampled)
-
-    def _cholesky(self):
-
-        # Calculate exploration factor
-        exploration = np.square(self.alpha) * self.A_inv
-
-        # Covariance using cholesky decomposition
-        covar_decomposed = np.linalg.cholesky(exploration)
-
-        return covar_decomposed
+        return np.sum(x * beta_sampled, axis=1)
 
 
 class _LinUCB(_RidgeRegression):
 
-    def predict(self, x):
-
+    def predict(self, x: np.ndarray):
         # Scale
         if self.scaler is not None:
             x = self._scale_predict_context(x)
 
+        # Calculating x_A_inv
+        x_A_inv = np.dot(x, self.A_inv)
+
         # Upper confidence bound = alpha * sqrt(x A^-1 xt). Notice that, x = xt
-        ucb = (self.alpha * np.sqrt(np.dot(np.dot(x, self.A_inv), x)))
+        # ucb values are claculated for all the contexts in one single go. type(ucb): np.ndarray
+        ucb = self.alpha * np.sqrt(np.sum(x_A_inv * x, axis=1))
 
         # Calculate linucb expectation y = x * b + ucb
         return np.dot(x, self.beta) + ucb
 
 
 class _Linear(BaseMAB):
-
     factory = {"ts": _LinTS, "ucb": _LinUCB, "ridge": _RidgeRegression}
 
     def __init__(self, rng: _BaseRNG, arms: List[Arm], n_jobs: int, backend: Optional[str],
-                 l2_lambda: Num, alpha: Num, regression: str, arm_to_scaler: Optional[Dict[Arm, Callable]] = None):
+                 alpha: Num, epsilon: Num, l2_lambda: Num, regression: str, scale: bool):
         super().__init__(rng, arms, n_jobs, backend)
-        self.l2_lambda = l2_lambda
         self.alpha = alpha
+        self.epsilon = epsilon
+        self.l2_lambda = l2_lambda
         self.regression = regression
-
-        # Create ridge regression model for each arm
+        self.scale = scale
         self.num_features = None
 
-        if arm_to_scaler is None:
-            arm_to_scaler = dict((arm, None) for arm in arms)
+        # Create regression model for each arm
+        self.arm_to_model = dict((arm, _Linear.factory.get(regression)(rng, alpha, l2_lambda, scale)) for arm in arms)
 
-        self.arm_to_model = dict((arm, _Linear.factory.get(regression)(rng, l2_lambda,
-                                                                       alpha, arm_to_scaler[arm])) for arm in arms)
-
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Initialize each model by arm
         self.num_features = contexts.shape[1]
         for arm in self.arms:
             self.arm_to_model[arm].init(num_features=self.num_features)
 
+        # Reset warm started arms
+        self._reset_arm_to_status()
+
         # Perform parallel fit
         self._parallel_fit(decisions, rewards, contexts)
 
-    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=False)
+
+    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
         # Perform parallel fit
         self._parallel_fit(decisions, rewards, contexts)
 
-    def predict(self, contexts: np.ndarray = None):
+        # Update trained arms
+        self._set_arms_as_trained(decisions=decisions, is_partial=True)
+
+    def predict(self, contexts: np.ndarray = None) -> Union[Arm, List[Arm]]:
         # Return predict for the given context
-        return self._parallel_predict(contexts, is_predict=True)
+        return self._vectorized_predict_context(contexts, is_predict=True)
 
-    def predict_expectations(self, contexts: np.ndarray = None):
+    def predict_expectations(self, contexts: np.ndarray = None) -> Union[Dict[Arm, Num], List[Dict[Arm, Num]]]:
         # Return predict expectations for the given context
-        return self._parallel_predict(contexts, is_predict=False)
+        return self._vectorized_predict_context(contexts, is_predict=False)
 
-    def _uptake_new_arm(self, arm: Arm, binarizer: Callable = None, scaler: Callable = None):
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        self._warm_start(arm_to_features, distance_quantile)
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        for cold_arm, warm_arm in cold_arm_to_warm_arm.items():
+            self.arm_to_model[cold_arm] = deepcopy(self.arm_to_model[warm_arm])
+
+    def _uptake_new_arm(self, arm: Arm, binarizer: Callable = None):
 
         # Add to untrained_arms arms
-        self.arm_to_model[arm] = _Linear.factory.get(self.regression)(self.rng, self.l2_lambda, self.alpha, scaler)
+        self.arm_to_model[arm] = _Linear.factory.get(self.regression)(self.rng, self.alpha, self.l2_lambda, self.scale)
 
         # If fit happened, initialize the new arm to defaults
         is_fitted = self.num_features is not None
@@ -206,30 +216,38 @@ class _Linear(BaseMAB):
 
     def _predict_contexts(self, contexts: np.ndarray, is_predict: bool,
                           seeds: Optional[np.ndarray] = None, start_index: Optional[int] = None) -> List:
+        pass
 
-        # Get local copy of model, arm_to_expectation and arms to minimize
-        # communication overhead between arms (processes) using shared objects
-        arm_to_model = deepcopy(self.arm_to_model)
-        arm_to_expectation = deepcopy(self.arm_to_expectation)
+    def _vectorized_predict_context(self, contexts: np.ndarray, is_predict: bool) -> List:
+
+        # Converting the arms list to numpy array
         arms = deepcopy(self.arms)
+        arms = np.array(arms)
 
-        # Create an empty list of predictions
-        predictions = [None] * len(contexts)
-        for index, row in enumerate(contexts):
-            # Each row needs a separately seeded rng for reproducibility in parallel
-            rng = np.random.RandomState(seed=seeds[index])
+        # Initializing array with expectations for each arm
+        num_contexts = contexts.shape[0]
+        arm_expectations = np.empty((num_contexts, len(arms)), dtype=float)
 
-            for arm in arms:
-                # Copy the row rng to the deep copied model in arm_to_model
-                arm_to_model[arm].rng = rng
+        # With epsilon probability, assign random flag to context
+        random_values = self.rng.rand(num_contexts)
+        random_mask = np.array(random_values < self.epsilon)
+        random_indices = random_mask.nonzero()[0]
 
-                # Get the expectation of each arm from its trained model
-                arm_to_expectation[arm] = arm_to_model[arm].predict(row)
+        # For random indices, generate random expectations
+        arm_expectations[random_indices] = self.rng.rand((random_indices.shape[0], len(arms)))
 
-            if is_predict:
-                predictions[index] = argmax(arm_to_expectation)
-            else:
-                predictions[index] = arm_to_expectation.copy()
+        # For non-random indices, get expectations for each arm
+        nonrandom_indices = np.where(~random_mask)[0]
+        nonrandom_context = contexts[nonrandom_indices]
+        arm_expectations[nonrandom_indices] = np.array([self.arm_to_model[arm].predict(nonrandom_context)
+                                                        for arm in arms]).T
 
-        # Return list of predictions
-        return predictions
+        if is_predict:
+            predictions = arms[np.argmax(arm_expectations, axis=1)].tolist()
+        else:
+            predictions = [dict(zip(self.arms, value)) for value in arm_expectations]
+
+        return predictions if len(predictions) > 1 else predictions[0]
+
+    def _drop_existing_arm(self, arm: Arm) -> None:
+        self.arm_to_model.pop(arm)

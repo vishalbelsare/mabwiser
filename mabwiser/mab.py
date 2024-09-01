@@ -10,14 +10,14 @@ This module defines the public interface of the **MABWiser Library** providing a
     - ``NeighborhoodPolicy``
 """
 
-from typing import List, Union, Dict, NamedTuple, NoReturn, Callable, Optional
+from typing import Callable, Dict, List, NamedTuple, NewType, Optional, Union
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeRegressor
 
-from mabwiser._version import __author__, __email__, __version__, __copyright__
+from mabwiser._version import __author__, __copyright__, __email__, __version__
 from mabwiser.approximate import _LSHNearest
 from mabwiser.clusters import _Clusters
 from mabwiser.greedy import _EpsilonGreedy
@@ -29,7 +29,7 @@ from mabwiser.softmax import _Softmax
 from mabwiser.thompson import _ThompsonSampling
 from mabwiser.treebandit import _TreeBandit
 from mabwiser.ucb import _UCB1
-from mabwiser.utils import Constants, Arm, Num, check_true, check_false, create_rng
+from mabwiser.utils import Arm, Constants, Num, check_false, check_true, create_rng
 
 __author__ = __author__
 __email__ = __email__
@@ -49,7 +49,7 @@ class LearningPolicy(NamedTuple):
         epsilon: Num
             The probability of selecting a random arm for exploration.
             Integer or float. Must be between 0 and 1.
-            Default value is 0.05.
+            Default value is 0.1.
 
         Example
         -------
@@ -62,11 +62,57 @@ class LearningPolicy(NamedTuple):
             >>> mab.predict()
             'Arm1'
         """
-        epsilon: Num = 0.05
+        epsilon: Num = 0.1
 
         def _validate(self):
             check_true(isinstance(self.epsilon, (int, float)), TypeError("Epsilon must be an integer or float."))
             check_true(0 <= self.epsilon <= 1, ValueError("The value of epsilon must be between 0 and 1."))
+
+    class LinGreedy(NamedTuple):
+        """LinGreedy Learning Policy.
+
+        This policy trains a ridge regression for each arm.
+        Then, given a given context, it predicts a regression value.
+        This policy selects the arm with the highest regression value with probability 1 - :math:`\\epsilon`,
+        and with probability :math:`\\epsilon` it selects an arm at random for exploration.
+
+        Attributes
+        ----------
+        epsilon: Num
+            The probability of selecting a random arm for exploration.
+            Integer or float. Must be between 0 and 1.
+            Default value is 0.1.
+        l2_lambda: Num
+            The regularization strength.
+            Integer or float. Cannot be negative.
+            Default value is 1.0.
+        scale: bool
+            Whether to scale features to have zero mean and unit variance.
+            Uses StandardScaler in sklearn.preprocessing.
+            Default value is False.
+
+        Example
+        -------
+            >>> from mabwiser.mab import MAB, LearningPolicy
+            >>> list_of_arms = ['Arm1', 'Arm2']
+            >>> decisions = ['Arm1', 'Arm1', 'Arm2', 'Arm1']
+            >>> rewards = [20, 17, 25, 9]
+            >>> contexts = [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 1, 0], [3, 2, 1, 0]]
+            >>> mab = MAB(list_of_arms, LearningPolicy.LinGreedy(epsilon=0.5))
+            >>> mab.fit(decisions, rewards, contexts)
+            >>> mab.predict([[3, 2, 0, 1]])
+            'Arm2'
+        """
+        epsilon: Num = 0.1
+        l2_lambda: Num = 1.0
+        scale: bool = False
+
+        def _validate(self):
+            check_true(isinstance(self.epsilon, (int, float)), TypeError("Epsilon must be an integer or float."))
+            check_true(0 <= self.epsilon <= 1, ValueError("Epsilon must be between zero and one."))
+            check_true(isinstance(self.l2_lambda, (int, float)), TypeError("L2_lambda must be an integer or float."))
+            check_true(0 <= self.l2_lambda, ValueError("The value of l2_lambda cannot be negative."))
+            check_true(isinstance(self.scale, bool), TypeError("Standardize must be True or False."))
 
     class LinTS(NamedTuple):
         """ LinTS Learning Policy
@@ -99,12 +145,10 @@ class LearningPolicy(NamedTuple):
             The regularization strength.
             Integer or float. Must be greater than zero.
             Default value is 1.0.
-        arm_to_scaler: Dict[Arm, Callable]
-            Standardize context features by arm.
-            Dictionary mapping each arm to a scaler object. It is assumed
-            that the scaler objects are already fit and will only be used
-            to transform context features.
-            Default value is None.
+        scale: bool
+            Whether to scale features to have zero mean and unit variance.
+            Uses StandardScaler in sklearn.preprocessing.
+            Default value is False.
 
         Example
         -------
@@ -120,15 +164,14 @@ class LearningPolicy(NamedTuple):
         """
         alpha: Num = 1.0
         l2_lambda: Num = 1.0
-        arm_to_scaler: Dict[Arm, Callable] = None
+        scale: bool = False
 
         def _validate(self):
             check_true(isinstance(self.alpha, (int, float)), TypeError("Alpha must be an integer or float."))
             check_true(0 < self.alpha, ValueError("The value of alpha must be greater than zero."))
             check_true(isinstance(self.l2_lambda, (int, float)), TypeError("L2_lambda must be an integer or float."))
             check_true(0 < self.l2_lambda, ValueError("The value of l2_lambda must be greater than zero."))
-            if self.arm_to_scaler is not None:
-                check_true(isinstance(self.arm_to_scaler, dict), TypeError("Arm_to_scaler must be a dictionary"))
+            check_true(isinstance(self.scale, bool), TypeError("Scale must be True or False."))
 
     class LinUCB(NamedTuple):
         """LinUCB Learning Policy.
@@ -159,12 +202,10 @@ class LearningPolicy(NamedTuple):
             The regularization strength.
             Integer or float. Cannot be negative.
             Default value is 1.0.
-        arm_to_scaler: Dict[Arm, Callable]
-            Standardize context features by arm.
-            Dictionary mapping each arm to a scaler object. It is assumed
-            that the scaler objects are already fit and will only be used
-            to transform context features.
-            Default value is None.
+        scale: bool
+            Whether to scale features to have zero mean and unit variance.
+            Uses StandardScaler in sklearn.preprocessing.
+            Default value is False.
 
         Example
         -------
@@ -180,15 +221,14 @@ class LearningPolicy(NamedTuple):
         """
         alpha: Num = 1.0
         l2_lambda: Num = 1.0
-        arm_to_scaler: Dict[Arm, Callable] = None
+        scale: bool = False
 
         def _validate(self):
             check_true(isinstance(self.alpha, (int, float)), TypeError("Alpha must be an integer or float."))
             check_true(0 <= self.alpha, ValueError("The value of alpha cannot be negative."))
             check_true(isinstance(self.l2_lambda, (int, float)), TypeError("L2_lambda must be an integer or float."))
             check_true(0 <= self.l2_lambda, ValueError("The value of l2_lambda cannot be negative."))
-            if self.arm_to_scaler is not None:
-                check_true(isinstance(self.arm_to_scaler, dict), TypeError("Arm_to_scaler must be a dictionary"))
+            check_true(isinstance(self.scale, bool), TypeError("Scale must be True or False."))
 
     class Popularity(NamedTuple):
         """Randomized Popularity Learning Policy.
@@ -250,8 +290,8 @@ class LearningPolicy(NamedTuple):
             P(arm) = \\frac{ e ^  \\frac{\\mu_i - \\max{\\mu}}{ \\tau } }
             { \\Sigma{e ^  \\frac{\\mu - \\max{\\mu}}{ \\tau }}  }
 
-        where :math:`\\mu_i` is the mean reward for that arm and :math:`\\tau` is the "temperature" to determine the degree of
-        exploration.
+        where :math:`\\mu_i` is the mean reward for that arm and :math:`\\tau` is the "temperature" to determine
+        the degree of exploration.
 
         Attributes
         ----------
@@ -488,7 +528,7 @@ class NeighborhoodPolicy(NamedTuple):
             Integer value. Must be greater than zero.
             Default value is 3.
         no_nhood_prob_of_arm: None or List
-            The probabilities associated with each arm. Used to select random arm if a prediction context has no neighbors.
+            The probabilities associated with each arm. Used to select random arm if context has no neighbors.
             If not given, a uniform random distribution over all arms is assumed.
             The probabilities should sum up to 1.
 
@@ -515,7 +555,7 @@ class NeighborhoodPolicy(NamedTuple):
             check_true(self.n_dimensions > 0, ValueError("n_dimensions must be greater than zero."))
             check_true(isinstance(self.n_tables, int), TypeError("n_tables must be an integer"))
             check_true(self.n_tables > 0, ValueError("n_tables must be greater than zero."))
-            check_true((self.no_nhood_prob_of_arm == None) or isinstance(self.no_nhood_prob_of_arm, List),
+            check_true((self.no_nhood_prob_of_arm is None) or isinstance(self.no_nhood_prob_of_arm, List),
                        TypeError("no_nhood_prob_of_arm must be None or List."))
             if isinstance(self.no_nhood_prob_of_arm, List):
                 check_true(np.isclose(sum(self.no_nhood_prob_of_arm), 1.0),
@@ -538,7 +578,7 @@ class NeighborhoodPolicy(NamedTuple):
             Accepts any of the metrics supported by scipy.spatial.distance.cdist.
             Default value is Euclidean distance.
         no_nhood_prob_of_arm: None or List
-            The probabilities associated with each arm. Used to select random arm if a prediction context has no neighbors.
+            The probabilities associated with each arm. Used to select random arm if context has no neighbors.
             If not given, a uniform random distribution over all arms is assumed.
             The probabilities should sum up to 1.
 
@@ -565,7 +605,7 @@ class NeighborhoodPolicy(NamedTuple):
             check_true((self.metric in Constants.distance_metrics),
                        ValueError("Metric must be supported by scipy.spatial.distance.cdist"))
             check_true(self.radius > 0, ValueError("Radius must be greater than zero."))
-            check_true((self.no_nhood_prob_of_arm == None) or isinstance(self.no_nhood_prob_of_arm, List),
+            check_true((self.no_nhood_prob_of_arm is None) or isinstance(self.no_nhood_prob_of_arm, List),
                        TypeError("no_nhood_prob_of_arm must be None or List."))
             if isinstance(self.no_nhood_prob_of_arm, List):
                 check_true(np.isclose(sum(self.no_nhood_prob_of_arm), 1.0),
@@ -593,9 +633,9 @@ class NeighborhoodPolicy(NamedTuple):
         ----------
         tree_parameters: Dict, **kwarg
             Parameters of the decision tree.
-            The keys must match the parameters of sklearn.tree.DecisionTreeClassifier.
+            The keys must match the parameters of sklearn.tree.DecisionTreeRegressor.
             When a parameter is not given, the default parameters from
-            sklearn.tree.DecisionTreeClassifier will be chosen.
+            sklearn.tree.DecisionTreeRegressor will be chosen.
             Default value is an empty dictionary.
 
         Example
@@ -615,16 +655,37 @@ class NeighborhoodPolicy(NamedTuple):
 
         def _validate(self):
             check_true(isinstance(self.tree_parameters, dict), TypeError("tree_parameters must be a dictionary."))
-            tree = DecisionTreeClassifier()
+            tree = DecisionTreeRegressor()
             for key in self.tree_parameters.keys():
                 check_true(key in tree.__dict__.keys(),
-                           ValueError("sklearn.tree.DecisionTreeClassifier doesn't have a parameter " + str(key) + "."))
+                           ValueError("sklearn.tree.DecisionTreeRegressor doesn't have a parameter " + str(key) + "."))
 
         def _is_compatible(self, learning_policy: LearningPolicy):
             # TreeBandit is compatible with these learning policies
             return isinstance(learning_policy, (LearningPolicy.EpsilonGreedy,
                                                 LearningPolicy.UCB1,
                                                 LearningPolicy.ThompsonSampling))
+
+
+# LearningPolicyType is the Union of all possible learning policies
+LearningPolicyType = NewType('LearningPolicyType', Union[LearningPolicy.EpsilonGreedy,
+                                                         LearningPolicy.Popularity,
+                                                         LearningPolicy.Random,
+                                                         LearningPolicy.Softmax,
+                                                         LearningPolicy.ThompsonSampling,
+                                                         LearningPolicy.UCB1,
+                                                         LearningPolicy.LinGreedy,
+                                                         LearningPolicy.LinTS,
+                                                         LearningPolicy.LinUCB])
+
+
+# NeighborhoodPolicyType is the Union of all possible neighborhood policies
+NeighborhoodPolicyType = NewType('NeighborhoodPolicyType', Union[None,
+                                                                 NeighborhoodPolicy.LSHNearest,
+                                                                 NeighborhoodPolicy.Clusters,
+                                                                 NeighborhoodPolicy.KNearest,
+                                                                 NeighborhoodPolicy.Radius,
+                                                                 NeighborhoodPolicy.TreeBandit])
 
 
 class MAB:
@@ -636,10 +697,10 @@ class MAB:
     Attributes
     ----------
     arms : list
-        The list of all of the arms available for decisions. Arms can be integers, strings, etc.
-    learning_policy : LearningPolicy
+        The list of all the arms available for decisions. Arms can be integers, strings, etc.
+    learning_policy : LearningPolicyType
         The learning policy.
-    neighborhood_policy : NeighborhoodPolicy
+    neighborhood_policy : NeighborhoodPolicyType
         The neighborhood policy.
     is_contextual : bool
         True if contextual policy is given, false otherwise. This is a read-only data field.
@@ -655,7 +716,7 @@ class MAB:
         - “loky” used by default, can induce some communication and memory overhead when exchanging input and
           output data with the worker Python processes.
         - “multiprocessing” previous process-based backend based on multiprocessing.Pool. Less robust than loky.
-        - “threading” is a very low-overhead backend but it suffers from the Python Global Interpreter Lock if the
+        - “threading” is a very low-overhead backend but, it suffers from the Python Global Interpreter Lock if the
           called function relies a lot on Python objects.
         Default value is None. In this case the default backend selected by joblib will be used.
 
@@ -691,20 +752,8 @@ class MAB:
 
     def __init__(self,
                  arms: List[Arm],  # The list of arms
-                 learning_policy: Union[LearningPolicy.EpsilonGreedy,
-                                        LearningPolicy.Popularity,
-                                        LearningPolicy.Random,
-                                        LearningPolicy.Softmax,
-                                        LearningPolicy.ThompsonSampling,
-                                        LearningPolicy.UCB1,
-                                        LearningPolicy.LinTS,
-                                        LearningPolicy.LinUCB],  # The learning policy
-                 neighborhood_policy: Union[None,
-                                            NeighborhoodPolicy.LSHNearest,
-                                            NeighborhoodPolicy.Clusters,
-                                            NeighborhoodPolicy.KNearest,
-                                            NeighborhoodPolicy.Radius,
-                                            NeighborhoodPolicy.TreeBandit] = None,  # The context policy, optional
+                 learning_policy: LearningPolicyType,  # The learning policy
+                 neighborhood_policy: NeighborhoodPolicyType = None,  # The context policy, optional
                  seed: int = Constants.default_seed,  # The random seed
                  n_jobs: int = 1,  # Number of parallel jobs
                  backend: str = None  # Parallel backend implementation
@@ -716,11 +765,11 @@ class MAB:
         Parameters
         ----------
         arms : List[Union[int, float, str]]
-            The list of all of the arms available for decisions.
+            The list of all the arms available for decisions.
             Arms can be integers, strings, etc.
-        learning_policy : LearningPolicy
+        learning_policy : LearningPolicyType
             The learning policy.
-        neighborhood_policy : NeighborhoodPolicy, optional
+        neighborhood_policy : NeighborhoodPolicyType, optional
             The context policy. Default value is None.
         seed : numbers.Rational, optional
             The random seed to initialize the random number generator.
@@ -748,6 +797,8 @@ class MAB:
         TypeError:  Number of parallel jobs is not an integer.
         TypeError:  Parallel backend is not a string.
         TypeError:  For EpsilonGreedy, epsilon must be integer or float.
+        TypeError:  For LinGreedy, epsilon must be an integer or float.
+        TypeError:  For LinGreedy, l2_lambda must be an integer or float.
         TypeError:  For LinTS, alpha must be an integer or float.
         TypeError:  For LinTS, l2_lambda must be an integer or float.
         TypeError:  For LinUCB, alpha must be an integer or float.
@@ -769,6 +820,8 @@ class MAB:
         ValueError: Duplicate values in arms.
         ValueError: Number of parallel jobs is 0.
         ValueError: For EpsilonGreedy, epsilon must be between 0 and 1.
+        ValueError: For LinGreedy, epsilon must be between 0 and 1.
+        ValueError: For LinGreedy, l2_lambda cannot be negative.
         ValueError: For LinTS, alpha must be greater than zero.
         ValueError: For LinTS, l2_lambda must be greater than zero.
         ValueError: For LinUCB, alpha cannot be negative.
@@ -812,12 +865,15 @@ class MAB:
             lp = _ThompsonSampling(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.binarizer)
         elif isinstance(learning_policy, LearningPolicy.UCB1):
             lp = _UCB1(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.alpha)
+        elif isinstance(learning_policy, LearningPolicy.LinGreedy):
+            lp = _Linear(self._rng, self.arms, self.n_jobs, self.backend, 0, learning_policy.epsilon,
+                         learning_policy.l2_lambda, "ridge", learning_policy.scale)
         elif isinstance(learning_policy, LearningPolicy.LinTS):
-            lp = _Linear(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.l2_lambda,
-                         learning_policy.alpha, "ts", learning_policy.arm_to_scaler)
+            lp = _Linear(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.alpha, 0,
+                         learning_policy.l2_lambda, "ts", learning_policy.scale)
         elif isinstance(learning_policy, LearningPolicy.LinUCB):
-            lp = _Linear(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.l2_lambda,
-                         learning_policy.alpha, "ucb", learning_policy.arm_to_scaler)
+            lp = _Linear(self._rng, self.arms, self.n_jobs, self.backend, learning_policy.alpha, 0,
+                         learning_policy.l2_lambda, "ucb", learning_policy.scale)
         else:
             check_true(False, ValueError("Undefined learning policy " + str(learning_policy)))
 
@@ -848,7 +904,8 @@ class MAB:
             else:
                 check_true(False, ValueError("Undefined context policy " + str(neighborhood_policy)))
         else:
-            self.is_contextual = isinstance(learning_policy, (LearningPolicy.LinTS, LearningPolicy.LinUCB))
+            self.is_contextual = isinstance(learning_policy, (LearningPolicy.LinGreedy, LearningPolicy.LinTS,
+                                                              LearningPolicy.LinUCB))
             self._imp = lp
 
     @property
@@ -878,13 +935,14 @@ class MAB:
             else:
                 return LearningPolicy.EpsilonGreedy(lp.epsilon)
         elif isinstance(lp, _Linear):
-            arm_to_scaler = dict()
-            for arm in lp.arms:
-                arm_to_scaler[arm] = lp.arm_to_model[arm].scaler
-            if lp.regression == 'ts':
-                return LearningPolicy.LinTS(lp.alpha, lp.l2_lambda, arm_to_scaler)
+            if lp.regression == 'ridge':
+                return LearningPolicy.LinGreedy(lp.epsilon, lp.l2_lambda, lp.scale)
+            elif lp.regression == 'ts':
+                return LearningPolicy.LinTS(lp.alpha, lp.l2_lambda, lp.scale)
+            elif lp.regression == 'ucb':
+                return LearningPolicy.LinUCB(lp.alpha, lp.l2_lambda, lp.scale)
             else:
-                return LearningPolicy.LinUCB(lp.alpha, lp.l2_lambda, arm_to_scaler)
+                check_true(False, ValueError("Undefined regression " + str(lp.regression)))
         elif isinstance(lp, _Random):
             return LearningPolicy.Random()
         elif isinstance(lp, _Softmax):
@@ -919,7 +977,19 @@ class MAB:
         else:
             return None
 
-    def add_arm(self, arm: Arm, binarizer: Callable = None, scaler: Callable = None) -> NoReturn:
+    @property
+    def cold_arms(self) -> List[Arm]:
+        if not self.neighborhood_policy:
+            # No neighborhood policy, cold arms are calculated at the learning policy level
+            return self._imp.cold_arms
+
+        else:
+            # With neighborhood policies, we end up training and doing inference within the neighborhood.
+            # Each neighborhood can have a different set of trained arms, and if warm start is used,
+            # a different set of cold arms. Therefore, cold arms aren't defined for neighborhood policies.
+            return list()
+
+    def add_arm(self, arm: Arm, binarizer: Callable = None) -> None:
         """ Adds an _arm_ to the list of arms.
 
         Incorporates the arm into the learning and neighborhood policies with no training data.
@@ -930,8 +1000,6 @@ class MAB:
             The new arm to be added.
         binarizer: Callable
             The new binarizer function for Thompson Sampling.
-        scaler: Callable
-            A scaler object from sklearn.preprocessing.
 
         Returns
         -------
@@ -940,8 +1008,6 @@ class MAB:
         Raises
         ------
         TypeError:  For ThompsonSampling, binarizer must be a callable function.
-        TypeError:  The standard scaler object must have a transform method.
-        TypeError:  The standard scaler object must be fit with calculated ``mean_`` and ``var_`` attributes.
 
         ValueError: A binarizer function was provided but the learning policy is not Thompson Sampling.
         ValueError: The arm already exists.
@@ -958,23 +1024,44 @@ class MAB:
                                                       "success for a given arm decision. Specifically, the function "
                                                       "signature is binarize(arm: Arm, reward: Num) -> True/False "
                                                       "or 0/1"))
-
-        if scaler:
-            check_true(hasattr(scaler, 'transform'),
-                       TypeError("Scaler must be a scaler object from sklearn.preprocessing with a transform method"))
-            check_true(hasattr(scaler, 'mean_') and hasattr(scaler, 'var_'),
-                       TypeError("Scaler must be fit with calculated mean_ and var_ attributes"))
+        check_false(arm in self.arms, ValueError("The arm is already in the list of arms."))
 
         self._validate_arm(arm)
         self.arms.append(arm)
-        self._imp.add_arm(arm, binarizer, scaler)
+        self._imp.add_arm(arm, binarizer)
+
+    def remove_arm(self, arm: Arm) -> None:
+        """Removes an _arm_ from the list of arms.
+
+        Parameters
+        ----------
+        arm: Arm
+            The existing arm to be removed.
+
+        Returns
+        -------
+        No return.
+
+        Raises
+        ------
+        ValueError: The arm does not exist.
+        ValueError: The arm is ``None``.
+        ValueError: The arm is ``NaN``.
+        ValueError: The arm is ``Infinity``.
+        """
+
+        check_true(arm in self.arms, ValueError("The arm is not in the list of arms."))
+
+        self._validate_arm(arm)
+        self.arms.remove(arm)
+        self._imp.remove_arm(arm)
 
     def fit(self,
             decisions: Union[List[Arm], np.ndarray, pd.Series],  # Decisions that are made
             rewards: Union[List[Num], np.ndarray, pd.Series],  # Rewards that are received
             contexts: Union[None, List[List[Num]],
                             np.ndarray, pd.Series, pd.DataFrame] = None  # Contexts, optional
-            ) -> NoReturn:
+            ) -> None:
         """Fits the multi-armed bandit to the given *decisions*, their corresponding *rewards*
         and *contexts*, if any.
 
@@ -1030,7 +1117,7 @@ class MAB:
     def partial_fit(self,
                     decisions: Union[List[Arm], np.ndarray, pd.Series],
                     rewards: Union[List[Num], np.ndarray, pd.Series],
-                    contexts: Union[None, List[List[Num]], np.ndarray, pd.Series, pd.DataFrame] = None) -> NoReturn:
+                    contexts: Union[None, List[List[Num]], np.ndarray, pd.Series, pd.DataFrame] = None) -> None:
         """Updates the multi-armed bandit with the given *decisions*, their corresponding *rewards*
         and *contexts*, if any.
 
@@ -1095,9 +1182,10 @@ class MAB:
 
         Parameters
         ----------
-        contexts : Union[None, List[List[Num]], np.ndarray, pd.Series, pd.DataFrame]
-            The context under which each decision is made. Default value is None.
-            Contexts should be ``None`` for context-free bandits and is required for contextual bandits.
+        contexts : Union[None, List[Num], List[List[Num]], np.ndarray, pd.Series, pd.DataFrame]
+            The context for the expected rewards. Default value is None.
+            If contexts is not ``None`` for context-free bandits, the predictions returned will be a
+            list of the same length as contexts.
 
         Returns
         -------
@@ -1107,8 +1195,7 @@ class MAB:
         ------
         TypeError:  Contexts is not given as ``None``, list, numpy array, pandas series or data frames.
 
-        ValueError: Predicting with contexts data when there is no contextual policy.
-        ValueError: Contextual policy when predicting with no contexts data.
+        ValueError: Prediction with context policy requires context data.
         """
 
         # Check that fit is called before
@@ -1135,7 +1222,8 @@ class MAB:
         ----------
         contexts : Union[None, List[Num], List[List[Num]], np.ndarray, pd.Series, pd.DataFrame]
             The context for the expected rewards. Default value is None.
-            Contexts should be ``None`` for context-free bandits and is required for contextual bandits.
+            If contexts is not ``None`` for context-free bandits, the predicted expectations returned will be a
+            list of the same length as contexts.
 
         Returns
         -------
@@ -1145,8 +1233,7 @@ class MAB:
         ------
         TypeError:  Contexts is not given as ``None``, list, numpy array or pandas data frames.
 
-        ValueError: Predicting with contexts data when there is no contextual policy.
-        ValueError: Contextual policy when predicting with no contexts data.
+        ValueError: Prediction with context policy requires context data.
         """
 
         # Check that fit is called before
@@ -1161,8 +1248,45 @@ class MAB:
         # Return a dictionary from arms (key) to expectations (value)
         return self._imp.predict_expectations(contexts)
 
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float) -> None:
+        """Warm-start untrained (cold) arms of the multi-armed bandit.
+
+        Validates arguments and raises exceptions in case there are violations.
+
+        The warm-start procedure depends on the learning and neighborhood policy. Note that for certain neighborhood
+        policies (e.g., LSHNearest, KNearest, Radius) warm start can only be performed after the nearest neighbors
+        have been determined in the "predict" step. Accordingly, warm start has to be executed for each context being
+        predicted which is computationally expensive.
+
+        Parameters
+        ----------
+        arm_to_features : Dict[Arm, List[Num]]
+            Numeric representation for each arm.
+        distance_quantile : float
+            Value between 0 and 1 used to determine if an item can be warm started or not using closest item.
+            All cold items will be warm started if 1 and none will be warm started if 0.
+
+        Returns
+        -------
+        No return.
+
+        Raises
+        ------
+        TypeError:  Arm features are not given as a dictionary.
+        TypeError:  Distance quantile is not given as a float.
+
+        ValueError:  Distance quantile is not between 0 and 1.
+        ValueError:  The arms in arm_to_features do not match arms.
+        """
+        check_true(isinstance(arm_to_features, dict), TypeError("Arm features are not given as a dictionary."))
+        check_true(isinstance(distance_quantile, float), TypeError("Distance quantile is not given as a float."))
+        check_true(0 <= distance_quantile <= 1, ValueError("Distance quantile is not between 0 and 1."))
+        check_true(set(self.arms) == set(arm_to_features.keys()),
+                   ValueError("The arms in arm features do not match arms."))
+        self._imp.warm_start(arm_to_features, distance_quantile)
+
     @staticmethod
-    def _validate_mab_args(arms, learning_policy, neighborhood_policy, seed, n_jobs, backend) -> NoReturn:
+    def _validate_mab_args(arms, learning_policy, neighborhood_policy, seed, n_jobs, backend):
         """
         Validates arguments for the MAB constructor.
         """
@@ -1171,14 +1295,14 @@ class MAB:
         check_true(isinstance(arms, list), TypeError("The arms should be provided in a list."))
         check_false(None in arms, ValueError("The arm list cannot contain None."))
         check_false(np.nan in arms, ValueError("The arm list cannot contain NaN."))
-        check_false(np.Inf in arms, ValueError("The arm list cannot contain Infinity."))
+        check_false(np.inf in arms, ValueError("The arm list cannot contain Infinity."))
         check_true(len(arms) == len(set(arms)), ValueError("The list of arms cannot contain duplicate values."))
 
         # Learning Policy type
         check_true(isinstance(learning_policy,
                               (LearningPolicy.EpsilonGreedy, LearningPolicy.Popularity, LearningPolicy.Random,
                                LearningPolicy.Softmax, LearningPolicy.ThompsonSampling, LearningPolicy.UCB1,
-                               LearningPolicy.LinTS, LearningPolicy.LinUCB)),
+                               LearningPolicy.LinGreedy, LearningPolicy.LinTS, LearningPolicy.LinUCB)),
                    TypeError("Learning Policy type mismatch."))
 
         # Learning policy value
@@ -1208,7 +1332,7 @@ class MAB:
         if backend is not None:
             check_true(isinstance(backend, str), TypeError("Parallel backend must be a string."))
 
-    def _validate_fit_args(self, decisions, rewards, contexts) -> NoReturn:
+    def _validate_fit_args(self, decisions, rewards, contexts):
         """"
         Validates argument types for fit and partial_fit functions.
         """
@@ -1246,7 +1370,7 @@ class MAB:
                         ValueError("Thompson Sampling requires binary rewards when binarizer function is not "
                                    "provided."))
 
-    def _validate_predict_args(self, contexts) -> NoReturn:
+    def _validate_predict_args(self, contexts):
         """"
         Validates argument types for predict and predict_expectation functions.
         """
@@ -1256,10 +1380,11 @@ class MAB:
             check_true(contexts is not None, ValueError("Prediction with context policy requires context data."))
             MAB._validate_context_type(contexts)
         else:
-            check_true(contexts is None, ValueError("Prediction with no context policy cannot handle context data."))
+            if contexts is not None:
+                MAB._validate_context_type(contexts)
 
     @staticmethod
-    def _validate_context_type(contexts) -> NoReturn:
+    def _validate_context_type(contexts):
         """
         Validates that context data is 2D
         """
@@ -1273,14 +1398,14 @@ class MAB:
             check_true(isinstance(contexts, (pd.Series, pd.DataFrame)),
                        TypeError("The contexts should be given as 2D list, numpy array, pandas series or data frames."))
 
-    def _validate_arm(self, arm):
+    @staticmethod
+    def _validate_arm(arm):
         """
         Validates new arm.
         """
         check_false(arm is None, ValueError("The arm cannot be None."))
         check_false(np.nan in [arm], ValueError("The arm cannot be NaN."))
         check_false(np.inf in [arm], ValueError("The arm cannot be Infinity."))
-        check_false(arm in self.arms, ValueError("The arm is already in the list of arms."))
 
     @staticmethod
     def _convert_array(array_like) -> np.ndarray:
@@ -1360,7 +1485,9 @@ class MAB:
             else:  # For predictions, compare the shape to the stored context history
 
                 # We need to find out the number of features (to distinguish Series shape)
-                if isinstance(self.learning_policy, (LearningPolicy.LinTS, LearningPolicy.LinUCB)):
+                if isinstance(self.learning_policy, (LearningPolicy.LinGreedy,
+                                                     LearningPolicy.LinTS,
+                                                     LearningPolicy.LinUCB)):
                     first_arm = self.arms[0]
                     if isinstance(self._imp, _Linear):
                         num_features = self._imp.arm_to_model[first_arm].beta.size

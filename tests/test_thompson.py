@@ -59,7 +59,7 @@ class ThompsonTest(BaseTest):
         self.assertEqual(mab._imp.arm_to_fail_count[2], 3)
         self.assertEqual(mab._imp.arm_to_fail_count[3], 1)
 
-        self.assertEqual(arm, 2)
+        self.assertEqual(arm, 3)
 
     def test_thompson_multiple(self):
 
@@ -71,7 +71,7 @@ class ThompsonTest(BaseTest):
                                  num_run=5,
                                  is_predict=True)
 
-        self.assertEqual(arms, [1, 3, 2, 3, 1])
+        self.assertEqual(arms, [1, 3, 3, 1, 1])
 
     def test_thompson_unused_arm(self):
 
@@ -83,7 +83,7 @@ class ThompsonTest(BaseTest):
                                  num_run=5,
                                  is_predict=True)
 
-        self.assertEqual(arms, [4, 4, 1, 3, 1])
+        self.assertEqual(arms, [4, 4, 4, 1, 1])
 
     def test_thompson_numpy(self):
 
@@ -95,7 +95,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [1, 1, 1, 3])
+        self.assertEqual(arms, [3, 2, 1, 3])
 
     def test_thompson_series(self):
 
@@ -107,7 +107,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [3, 3, 1, 3])
+        self.assertEqual(arms, [3, 3, 3, 3])
 
     def test_thompson_df(self):
 
@@ -122,7 +122,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [2, 3, 3, 3])
+        self.assertEqual(arms, [3, 3, 1, 3])
 
     def test_thompson_df_list(self):
 
@@ -137,7 +137,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [2, 3, 3, 3])
+        self.assertEqual(arms, [3, 3, 1, 3])
 
     def test_thompson_non_binary_without_threshold(self):
 
@@ -175,7 +175,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [1, 1, 1, 3])
+        self.assertEqual(arms, [3, 2, 1, 2])
 
     def test_thompson_t2(self):
 
@@ -187,7 +187,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [1, 3, 1, 1])
+        self.assertEqual(arms, [1, 3, 3, 1])
 
     def test_thompson_t3(self):
 
@@ -204,7 +204,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [2, 4, 2, 2])
+        self.assertEqual(arms, [4, 2, 2, 2])
 
     def test_thompson_t4(self):
 
@@ -221,7 +221,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [2, 2, 4, 2])
+        self.assertEqual(arms, [4, 4, 2, 4])
 
     def test_thompson_t5(self):
 
@@ -233,7 +233,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, ['one', 'one', 'one', 'three'])
+        self.assertEqual(arms, ['three', 'two', 'one', 'three'])
 
     def test_thompson_t6(self):
 
@@ -250,7 +250,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, ['one', 'three', 'two', 'three'])
+        self.assertEqual(arms, ['one', 'two', 'two', 'two'])
 
     def test_thompson_t7(self):
 
@@ -267,7 +267,7 @@ class ThompsonTest(BaseTest):
                                  num_run=5,
                                  is_predict=True)
 
-        self.assertEqual(arms, ['b', 'c', 'b', 'b', 'c'])
+        self.assertEqual(arms, ['c', 'b', 'b', 'b', 'b'])
 
     def test_thompson_t8(self):
 
@@ -284,7 +284,7 @@ class ThompsonTest(BaseTest):
                                  num_run=5,
                                  is_predict=True)
 
-        self.assertEqual(arms, ['c', 'c', 'c', 'c', 'c'])
+        self.assertEqual(arms, ['b', 'c', 'c', 'c', 'c'])
 
     def test_thompson_t9(self):
 
@@ -306,7 +306,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [b, a, b, c])
+        self.assertEqual(arms, [c, b, c, c])
 
     def test_thompson_t10(self):
 
@@ -328,7 +328,7 @@ class ThompsonTest(BaseTest):
                                  num_run=4,
                                  is_predict=True)
 
-        self.assertEqual(arms, [a, b, b, b])
+        self.assertEqual(arms, [b, c, b, a])
 
     def test_fit_twice(self):
 
@@ -354,7 +354,7 @@ class ThompsonTest(BaseTest):
         self.assertEqual(mab._imp.arm_to_fail_count[2], 3)
         self.assertEqual(mab._imp.arm_to_fail_count[3], 1)
 
-        self.assertEqual(arm, 2)
+        self.assertEqual(arm, 3)
 
         decisions = [1, 2, 3, 1, 2, 3]
         rewards = [1, 0, 3, 7, 11, 22]
@@ -392,7 +392,7 @@ class ThompsonTest(BaseTest):
         self.assertEqual(mab._imp.arm_to_fail_count[2], 3)
         self.assertEqual(mab._imp.arm_to_fail_count[3], 1)
 
-        self.assertEqual(arm, 2)
+        self.assertEqual(arm, 3)
 
         decisions = [1, 2, 3, 1, 2, 3]
         rewards = [1, 0, 3, 7, 11, 22]
@@ -449,8 +449,7 @@ class ThompsonTest(BaseTest):
         arm, mab = self.predict(arms=[0, 1],
                                 decisions=[1, 0, 1, 1, 0],
                                 rewards=[10, 4, 3, 70, 6],
-                                learning_policy=
-                                LearningPolicy.ThompsonSampling(bin1),
+                                learning_policy=LearningPolicy.ThompsonSampling(bin1),
                                 seed=123456,
                                 num_run=1,
                                 is_predict=True)
@@ -479,3 +478,84 @@ class ThompsonTest(BaseTest):
         self.assertTrue(mab._imp.arm_to_fail_count[2] == 1)
         self.assertTrue(mab._imp.arm_to_success_count[2] == 1)
         self.assertIs(mab._imp.binarizer, bin2)
+
+    def test_remove_arm(self):
+
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.ThompsonSampling(),
+                                 seed=123456,
+                                 num_run=4,
+                                 is_predict=True)
+        mab.remove_arm(3)
+        self.assertTrue(3 not in mab.arms)
+        self.assertTrue(3 not in mab._imp.arms)
+        self.assertTrue(3 not in mab._imp.arm_to_expectation)
+        self.assertTrue(3 not in mab._imp.arm_to_fail_count)
+        self.assertTrue(3 not in mab._imp.arm_to_success_count)
+
+    def test_warm_start(self):
+
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                              rewards=[1, 0, 0, 0, 0, 0, 1, 1, 1],
+                              learning_policy=LearningPolicy.ThompsonSampling(),
+                              seed=7,
+                              num_run=1,
+                              is_predict=False)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_fail_count, {1: 3, 2: 4, 3: 1})
+        self.assertDictEqual(mab._imp.arm_to_success_count, {1: 5, 2: 1, 3: 1})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0, 1]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_fail_count, {1: 3, 2: 4, 3: 3})
+        self.assertDictEqual(mab._imp.arm_to_success_count, {1: 5, 2: 1, 3: 5})
+
+    def test_double_warm_start(self):
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                              rewards=[1, 0, 0, 0, 0, 0, 1, 1, 1],
+                              learning_policy=LearningPolicy.ThompsonSampling(),
+                              seed=7,
+                              num_run=1,
+                              is_predict=False)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_fail_count, {1: 3, 2: 4, 3: 1})
+        self.assertDictEqual(mab._imp.arm_to_success_count, {1: 5, 2: 1, 3: 1})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0, 1]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_fail_count, {1: 3, 2: 4, 3: 3})
+        self.assertDictEqual(mab._imp.arm_to_success_count, {1: 5, 2: 1, 3: 5})
+
+        # Warm start again, #3 is closest to #2 but shouldn't get warm started again
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0.5, 0.5]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_fail_count, {1: 3, 2: 4, 3: 3})
+        self.assertDictEqual(mab._imp.arm_to_success_count, {1: 5, 2: 1, 3: 5})
+
+    def test_ts_contexts(self):
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.ThompsonSampling(),
+                                 contexts=[[]] * 10,
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertEqual(arms, [3, 1, 1, 1, 1, 3, 1, 1, 1, 1])
+
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.ThompsonSampling(),
+                                 contexts=[[1, 2, 3]] * 10,
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertEqual(arms, [3, 1, 1, 1, 1, 3, 1, 1, 1, 1])

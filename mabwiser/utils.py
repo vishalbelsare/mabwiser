@@ -6,7 +6,7 @@ This module provides a number of constants and helper functions.
 """
 
 import abc
-from typing import Dict, Union, Iterable, NamedTuple, Tuple, NewType, NoReturn
+from typing import Dict, Iterable, List, NamedTuple, NewType, Tuple, Union
 
 import numpy as np
 
@@ -38,7 +38,14 @@ def argmax(dictionary: Dict[Arm, Num]) -> Arm:
     return max(dictionary, key=dictionary.get)
 
 
-def check_false(expression: bool, exception: Exception) -> NoReturn:
+def argmin(dictionary: Dict) -> Arm:
+    """
+    Returns the first key that has the minimum value.
+    """
+    return min(dictionary, key=dictionary.get)
+
+
+def check_false(expression: bool, exception: Exception) -> None:
     """
     Checks that given expression is false, otherwise raises the given exception.
     """
@@ -46,7 +53,7 @@ def check_false(expression: bool, exception: Exception) -> NoReturn:
         raise exception
 
 
-def check_true(expression: bool, exception: Exception) -> NoReturn:
+def check_true(expression: bool, exception: Exception) -> None:
     """
     Checks that given expression is true, otherwise raises the given exception.
     """
@@ -54,7 +61,7 @@ def check_true(expression: bool, exception: Exception) -> NoReturn:
         raise exception
 
 
-def reset(dictionary: Dict, value) -> NoReturn:
+def reset(dictionary: Dict, value) -> None:
     """
     Maps every key to the given value.
     """
@@ -70,16 +77,24 @@ class _BaseRNG(metaclass=abc.ABCMeta):
         self.rng = None
 
     @abc.abstractmethod
-    def rand(self):
-        """ Return a single float in the range [0, 1)
+    def rand(self, size=None):
+        """ Return return values in range [0, 1) with a given shape.
+
+            Parameters
+            ----------
+            size : int or tuple of ints, optional
+                Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
+                ``m * n * k`` samples are drawn.  Default is None, in which case a
+                single value is returned.
+
             Returns
             -------
-            out : Return a single float in the range [0, 1)
+            out : Array of random floats of shape size (unless size=None, in which case a single float is returned).
         """
         pass
 
     @abc.abstractmethod
-    def randint(self, low: int, high: int = None, size: int = None):
+    def randint(self, low: int, high: int = None, size=None):
         """ Return random integers from low (inclusive) to high (exclusive).
             Return random integers from the “discrete uniform” distribution
             in the “half-open” interval [low, high).
@@ -134,7 +149,7 @@ class _BaseRNG(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def beta(self, alpha: int, beta: int):
+    def beta(self, alpha: int, beta: int, size=None):
         """ Return a sample from a Beta distribution.
 
             Parameters
@@ -143,16 +158,21 @@ class _BaseRNG(metaclass=abc.ABCMeta):
                     Alpha, positive (>0).
             beta : float or array_like of floats
                     Beta, positive (>0).
+            size : int or tuple of ints, optional
+                    Output shape.
+                    If the given shape is, e.g., (m, n, k), then m * n * k samples are drawn.
+                    If size is None (default), a single value is returned if a and b are both scalars.
+                    Otherwise, np.broadcast(a, b).size samples are drawn.
 
             Returns
             -------
-            out : scalar
-                Drawn sample from the parameterized beta distribution.
+            out : scalar or ndarray
+               Drawn samples from the parameterized beta distribution.
         """
         pass
 
     @abc.abstractmethod
-    def standard_normal(self, size):
+    def standard_normal(self, size=None):
         """ Draw samples from a standard Normal distribution (mean=0, stdev=1).
 
             Parameters
@@ -168,27 +188,77 @@ class _BaseRNG(metaclass=abc.ABCMeta):
         """
         pass
 
+    def multivariate_normal(self, mean: List[float], covariance: List[List[float]], size=None):
+        """ Draw samples from a multivariate Normal distribution with given mean and covariance.
+
+            Parameters
+            ----------
+            mean : list of floats
+                The mean of each random variable, of length ``N``.
+            covariance : list of list of floats
+                The covariance of each random variable. If the length of parameter ``mean``
+                is ``N``, this parameter should contain ``N`` lists, each with ``N`` floats.
+            size : int or tuple of ints or None
+                Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
+                ``m * n * k * N`` samples are drawn, where ``N`` is the length of
+                parameter ``mean``. If ``None``, a vector of length ``N`` is returned.
+
+            Returns
+            -------
+            out : ndarray
+                A floating-point array of shape ``m * n * k * N`` of drawn samples based on
+                the ``size`` and the length of ``mean`` parameters.
+        """
+        pass
+
+    @abc.abstractmethod
+    def dirichlet(self, alpha: List[float], size=None):
+        """ Draw samples from the Dirichlet distribution.
+
+            Parameters
+            ----------
+            alpha : list of floats
+                Parameter of the distribution (length k)
+            size: int or tuple of ints or None
+                Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
+                ``m * n * k * N`` samples are drawn, where ``N`` is the length of
+                parameter ``mean``. If ``None``, a vector of length ``N`` is returned.
+
+            Returns
+            -------
+            samples: ndarray
+                The drawn samples, of shape (size, k).
+        """
+        pass
+
 
 class _NumpyRNG(_BaseRNG):
 
     def __init__(self, seed):
         super().__init__(seed)
-        self.rng = np.random.RandomState(self.seed)
+        self.rng = np.random.default_rng(self.seed)
 
-    def rand(self):
-        return self.rng.rand()
+    def rand(self, size=None):
+        return self.rng.random(size)
 
     def randint(self, low: int, high: int = None, size: int = None):
-        return self.rng.randint(low=low, high=high, size=size)
+        return self.rng.integers(low=low, high=high, size=size)
 
     def choice(self, a: Union[int, Iterable[int]], size: Union[int, Tuple[int]] = None, p: Iterable[float] = None):
         return self.rng.choice(a=a, size=size, p=p)
 
-    def beta(self, num_success: int, num_failure: int):
-        return self.rng.beta(num_success, num_failure)
+    def beta(self, num_success: int, num_failure: int, size=None):
+        return self.rng.beta(num_success, num_failure, size)
 
-    def standard_normal(self, size):
+    def standard_normal(self, size=None):
         return self.rng.standard_normal(size)
+
+    def multivariate_normal(self, mean: Union[np.ndarray, List[float]],
+                            covariance: Union[np.ndarray, List[List[float]]], size=None):
+        return np.squeeze(self.rng.multivariate_normal(mean, covariance, size=size, method='cholesky'))
+
+    def dirichlet(self, alpha: List[float], size=None):
+        return self.rng.dirichlet(alpha, size)
 
 
 def create_rng(seed: int) -> _BaseRNG:

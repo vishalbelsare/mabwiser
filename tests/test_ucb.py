@@ -374,3 +374,79 @@ class UCBTest(BaseTest):
         alpha = 3.33
         cb = _UCB1._get_ucb(mean, alpha, total_count, arm_count)
         self.assertAlmostEqual(cb, 20.95856258875877)
+
+    def test_remove_arm(self):
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.UCB1(1.0),
+                                 seed=123456,
+                                 num_run=4,
+                                 is_predict=True)
+        mab.remove_arm(3)
+        self.assertTrue(3 not in mab.arms)
+        self.assertTrue(3 not in mab._imp.arms)
+        self.assertTrue(3 not in mab._imp.arm_to_sum)
+        self.assertTrue(3 not in mab._imp.arm_to_count)
+        self.assertTrue(3 not in mab._imp.arm_to_mean)
+
+    def test_warm_start(self):
+
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                              rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                              learning_policy=LearningPolicy.UCB1(1.0),
+                              seed=7,
+                              num_run=1,
+                              is_predict=False)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_mean, {1: 0.5, 2: 0.0, 3: 0.0})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_mean, {1: 0.5, 2: 0.0, 3: 0.5})
+
+    def test_double_warm_start(self):
+
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 2, 2, 2, 1, 1, 1],
+                              rewards=[0, 0, 0, 0, 0, 0, 1, 1, 1],
+                              learning_policy=LearningPolicy.UCB1(1.0),
+                              seed=7,
+                              num_run=1,
+                              is_predict=False)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_mean, {1: 0.5, 2: 0.0, 3: 0.0})
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0, 1]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_mean, {1: 0.5, 2: 0.0, 3: 0.5})
+
+        # Warm start again, #3 is closest to #2 but shouldn't get warm started again
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0.5, 0.5]}, distance_quantile=0.5)
+        self.assertDictEqual(mab._imp.arm_to_mean, {1: 0.5, 2: 0.0, 3: 0.5})
+
+    def test_ucb_contexts(self):
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.UCB1(),
+                                 contexts=[[]] * 10,
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertEqual(arms, [2, 2, 2, 2, 2, 2, 2, 2, 2, 2])
+
+        arms, mab = self.predict(arms=[1, 2, 3],
+                                 decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3],
+                                 rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1],
+                                 learning_policy=LearningPolicy.UCB1(),
+                                 contexts=[[1, 2, 3]] * 10,
+                                 seed=123456,
+                                 num_run=1,
+                                 is_predict=True)
+        self.assertEqual(arms, [2, 2, 2, 2, 2, 2, 2, 2, 2, 2])

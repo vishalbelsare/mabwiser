@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from mabwiser.mab import LearningPolicy
-from mabwiser.linear import _RidgeRegression
+from mabwiser.linear import _RidgeRegression, fix_small_variance
 from tests.test_base import BaseTest
 
 
@@ -17,7 +17,7 @@ class RidgeRegressionTest(BaseTest):
         rewards = np.array([3, 3, 1])
         rng = np.random.RandomState(seed=7)
 
-        ridge = _RidgeRegression(rng, l2_lambda=1.0, alpha=1.0, scaler = None)
+        ridge = _RidgeRegression(rng, l2_lambda=1.0, alpha=1.0, scale=False)
 
         ridge.init(context.shape[1])
         ridge.fit(context, rewards)
@@ -31,11 +31,11 @@ class RidgeRegressionTest(BaseTest):
         scaler = StandardScaler()
         scaler.fit(context.astype('float64'))
 
-        ridge = _RidgeRegression(rng, l2_lambda=1.0, alpha=1.0, scaler = scaler)
+        ridge = _RidgeRegression(rng, l2_lambda=1.0, alpha=1.0, scale=True)
 
         ridge.init(context.shape[1])
         ridge.fit(context, rewards)
-        prediction = ridge.predict(np.array([0, 1, 2, 3, 5]))
+        prediction = ridge.predict(np.array([[0, 1, 2, 3, 5]]))
         self.assertTrue(math.isclose(prediction, 1.1429050092142725, abs_tol=1e-8))
 
     def test_fit(self):
@@ -474,3 +474,97 @@ class RidgeRegressionTest(BaseTest):
         self.assertEqual(mab._imp.arm_to_model[2].beta[2], 0)
         self.assertEqual(mab._imp.arm_to_model[2].beta[3], 0)
         self.assertEqual(mab._imp.arm_to_model[2].beta[4], 0)
+
+    def test_remove_arm(self):
+        arm, mab = self.predict(arms=[1, 2, 3],
+                                decisions=[1, 1, 1, 3, 2, 2, 3, 1, 3, 1],
+                                rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1, 1],
+                                learning_policy=LearningPolicy.LinTS(alpha=0.24),
+                                context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                                 [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                                 [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                                 [0, 2, 1, 0, 0]],
+                                contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                                seed=123456,
+                                num_run=4,
+                                is_predict=True)
+        mab.remove_arm(3)
+        self.assertTrue(3 not in mab.arms)
+        self.assertTrue(3 not in mab._imp.arms)
+        self.assertTrue(3 not in mab._imp.arm_to_expectation)
+        self.assertTrue(3 not in mab._imp.arm_to_model)
+
+    def test_warm_start(self):
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 1, 2, 2, 2, 1, 2, 1],
+                              rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1, 1],
+                              learning_policy=LearningPolicy.LinTS(alpha=0.24),
+                              context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                               [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                               [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                               [0, 2, 1, 0, 0]],
+                              contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                              seed=123456,
+                              num_run=4,
+                              is_predict=True)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_expectation, {1: 0.0, 2: 0.0, 3: 0.0})
+        self.assertListAlmostEqual(mab._imp.arm_to_model[1].beta, [0.19635284, 0.11556404, 0.57675997, 0.30597964, -0.39100933])
+        self.assertListAlmostEqual(mab._imp.arm_to_model[3].beta, [0, 0, 0, 0, 0])
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0, 0], 3: [0.5, 0.5]}, distance_quantile=0.5)
+        self.assertListAlmostEqual(mab._imp.arm_to_model[3].beta, [0.19635284, 0.11556404, 0.57675997, 0.30597964, -0.39100933])
+
+    def test_double_warm_start(self):
+        _, mab = self.predict(arms=[1, 2, 3],
+                              decisions=[1, 1, 1, 1, 2, 2, 2, 1, 2, 1],
+                              rewards=[0, 1, 1, 0, 1, 0, 1, 1, 1, 1],
+                              learning_policy=LearningPolicy.LinTS(alpha=0.24),
+                              context_history=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1], [0, 0, 1, 0, 0],
+                                               [0, 2, 2, 3, 5], [1, 3, 1, 1, 1], [0, 0, 0, 0, 0],
+                                               [0, 1, 4, 3, 5], [0, 1, 2, 4, 5], [1, 2, 1, 1, 3],
+                                               [0, 2, 1, 0, 0]],
+                              contexts=[[0, 1, 2, 3, 5], [1, 1, 1, 1, 1]],
+                              seed=123456,
+                              num_run=4,
+                              is_predict=True)
+
+        # Before warm start
+        self.assertEqual(mab._imp.trained_arms, [1, 2])
+        self.assertDictEqual(mab._imp.arm_to_expectation, {1: 0.0, 2: 0.0, 3: 0.0})
+        self.assertListAlmostEqual(mab._imp.arm_to_model[1].beta,
+                                   [0.19635284, 0.11556404, 0.57675997, 0.30597964, -0.39100933])
+        self.assertListAlmostEqual(mab._imp.arm_to_model[3].beta, [0, 0, 0, 0, 0])
+
+        # Warm start
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0, 1]}, distance_quantile=0.5)
+        self.assertListAlmostEqual(mab._imp.arm_to_model[3].beta,
+                                   [0.19635284, 0.11556404, 0.57675997, 0.30597964, -0.39100933])
+
+        # Warm start again, #3 shouldn't change even though it's closer to #2 now
+        mab.warm_start(arm_to_features={1: [0, 1], 2: [0.5, 0.5], 3: [0.5, 0.5]}, distance_quantile=0.5)
+        self.assertListAlmostEqual(mab._imp.arm_to_model[3].beta,
+                                   [0.19635284, 0.11556404, 0.57675997, 0.30597964, -0.39100933])
+
+    def test_fix_small_variance(self):
+        rng = np.random.default_rng(1234)
+        context = rng.random((10000, 10))
+
+        # Set first feature to have variance close to zero
+        context[0, 0] = 0.0001
+        context[1:, 0] = [0] * (10000 - 1)
+
+        scaler = StandardScaler()
+        scaler.fit(context)
+
+        self.assertAlmostEqual(scaler.scale_[0], 9.99949999e-07)
+        self.assertAlmostEqual(scaler.var_[0], 9.99900000e-13)
+
+        # Fix small variance
+        fix_small_variance(scaler)
+
+        self.assertAlmostEqual(scaler.scale_[0], 1)
+        self.assertAlmostEqual(scaler.var_[0], 0)

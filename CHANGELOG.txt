@@ -2,6 +2,93 @@
 MABWiser CHANGELOG
 =====================
 
+August, 07, 2024 2.7.4
+-------------------------------------------------------------------------------
+minor:
+- Changed np.Inf to np.inf to fix CI issues
+
+
+February, 17, 2024 2.7.3
+-------------------------------------------------------------------------------
+minor:
+- Changed return type of functions annotated with NoReturn to None by @LiHRaM
+
+February, 05, 2024 2.7.2
+-------------------------------------------------------------------------------
+minor:
+- Fixed default KMeans n_init parameters instead of using 'auto' used in scikit-learn>=1.4
+
+August, 02, 2023 2.7.1
+-------------------------------------------------------------------------------
+minor:
+- Implemented LearningPolicyType and NeighborhoodPolicyType to simplify input for MAB.
+- Updated tests to accommodate LearningPolicyType and NeighborhoodPolicyType.
+
+February, 07, 2023 2.7.0
+-------------------------------------------------------------------------------
+major:
+- Implement vectorized functions for Linear policies to speed-up prediction for multiple inputs.
+- Update tests for LinTS and LinGreedy Policies as a result of using global random seed in vectorized function
+
+January, 24, 2023 2.6.0
+-------------------------------------------------------------------------------
+major:
+- Implement tracking of warm started and partial fitted arms
+- Implement tracking of cold arms
+- Limit warm start to learning policies
+
+January, 19, 2023 2.5.0
+-------------------------------------------------------------------------------
+major:
+- Update warm start logic to only warm start an arm once
+
+minor:
+- Implement fix for fitting scalers in Linear policies when variance is too small
+
+March, 28, 2022 2.4.1
+-------------------------------------------------------------------------------
+minor:
+- Bug fixes in examples
+- Validate tree parameters of TreeBandit to be compatible with sklearn.tree.DecisionTreeRegressor
+
+March, 17, 2022 2.4.0
+-------------------------------------------------------------------------------
+major:
+- Implement vectorized functions for non-contextual policies to speed-up prediction for multiple decisions.
+- Change MAB predict and predict_expectations to allow empty contexts to be specified for non-contextual policies.
+- Update scaler use in Linear policies so that standard scaler can be fit directly instead of pre-trained scalers.
+- Change scaler argument from pre-trained `arm_to_scaler` input to a boolean scale flag.
+
+March, 8, 2022 2.3.0
+-------------------------------------------------------------------------------
+major:
+- New Algorithm: LinGreedy as a learning policy.
+- Thanks to Yevgeny Popkov for suggesting this algorithm.
+
+-------------------------------------------------------------------------------
+March, 2, 2022 2.2.0
+-------------------------------------------------------------------------------
+major:
+- Modified `predict_expectations`, such that `predict` can use `predict_expectations` directly in all non-contextual learning policies
+
+-------------------------------------------------------------------------------
+February, 25, 2022 2.1.0
+-------------------------------------------------------------------------------
+major:
+- Added warm_start method to MAB, that allows untrained (cold) arms to be warm started based on features of each arm.
+- Added remove_arm method to MAB to allow arms to be removed from bandit.
+
+-------------------------------------------------------------------------------
+February, 14, 2022 2.0.0
+-------------------------------------------------------------------------------
+major:
+- Breaking: Updated NumPy RNG backend to utilize the new Generator class. This is a breaking change for algorithms with random components.
+- Updated NumPy version dependency to >=1.17.0 to reflect the utilization of the new Generator class.
+
+minor:
+- Added multivariate sampling to base RNG class
+- Updated multivariate sampling logic in LinTS to utilize updated NumPy RNG backend
+
 -------------------------------------------------------------------------------
 August, 01, 2021 1.12.0
 -------------------------------------------------------------------------------

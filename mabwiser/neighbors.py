@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from copy import deepcopy
-from typing import Callable, List, NoReturn, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -15,7 +15,7 @@ from mabwiser.rand import _Random
 from mabwiser.softmax import _Softmax
 from mabwiser.thompson import _ThompsonSampling
 from mabwiser.ucb import _UCB1
-from mabwiser.utils import Arm, Num, reset, _BaseRNG, create_rng
+from mabwiser.utils import Arm, Num, _BaseRNG, create_rng, reset
 
 
 class _Neighbors(BaseMAB):
@@ -32,12 +32,16 @@ class _Neighbors(BaseMAB):
         self.rewards = None
         self.contexts = None
 
+        # Set warm start variables to None
+        self.arm_to_features = None
+        self.distance_quantile = None
+
         # Initialize the arm expectations to nan
         # When there are neighbors, expectations of the underlying learning policy is used
         # When there are no neighbors, return nan expectations
         reset(self.arm_to_expectation, np.nan)
 
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Set the historical data for prediction
         self.decisions = decisions
@@ -49,7 +53,7 @@ class _Neighbors(BaseMAB):
         else:
             self.rewards = rewards
 
-    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Binarize the rewards if using Thompson Sampling
         if isinstance(self.lp, _ThompsonSampling) and self.lp.binarizer:
@@ -60,15 +64,21 @@ class _Neighbors(BaseMAB):
         self.contexts = np.concatenate((self.contexts, contexts))
         self.rewards = np.concatenate((self.rewards, rewards))
 
-    def predict(self, contexts: np.ndarray = None):
+    def predict(self, contexts: np.ndarray = None) -> Union[Arm, List[Arm]]:
 
         # Return predict within the neighborhood
         return self._parallel_predict(contexts, is_predict=True)
 
-    def predict_expectations(self, contexts: np.ndarray = None):
+    def predict_expectations(self, contexts: np.ndarray = None) -> Union[Dict[Arm, Num], List[Dict[Arm, Num]]]:
 
         # Return predict expectations within the neighborhood
         return self._parallel_predict(contexts, is_predict=False)
+
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        pass
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        pass
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
         """Abstract method to be implemented by child classes."""
@@ -111,6 +121,9 @@ class _Neighbors(BaseMAB):
 
     def _uptake_new_arm(self, arm: Arm, binarizer: Callable = None, scaler: Callable = None):
         self.lp.add_arm(arm, binarizer)
+
+    def _drop_existing_arm(self, arm: Arm) -> None:
+        self.lp.remove_arm(arm)
 
 
 class _Radius(_Neighbors):

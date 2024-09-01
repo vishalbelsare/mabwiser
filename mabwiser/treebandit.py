@@ -4,7 +4,7 @@
 from collections import defaultdict
 from copy import deepcopy
 from functools import partial
-from typing import Union, Dict, List, NoReturn, Optional, Callable
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 from sklearn.tree import DecisionTreeRegressor
@@ -17,7 +17,7 @@ from mabwiser.rand import _Random
 from mabwiser.softmax import _Softmax
 from mabwiser.thompson import _ThompsonSampling
 from mabwiser.ucb import _UCB1
-from mabwiser.utils import argmax, Arm, Num, _BaseRNG
+from mabwiser.utils import Arm, Num, _BaseRNG, argmax, create_rng
 
 
 class _TreeBandit(BaseMAB):
@@ -33,7 +33,7 @@ class _TreeBandit(BaseMAB):
         self.arm_to_tree = {arm: DecisionTreeRegressor(**self.tree_parameters) for arm in self.arms}
         self.arm_to_leaf_to_rewards = {arm: defaultdict(partial(np.ndarray, 0)) for arm in self.arms}
 
-    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # Reset the decision tree and rewards of each arm
         self.arm_to_tree = {arm: DecisionTreeRegressor(**self.tree_parameters) for arm in self.arms}
@@ -48,7 +48,7 @@ class _TreeBandit(BaseMAB):
         # Calculate fit
         self._parallel_fit(decisions, rewards, contexts)
 
-    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> NoReturn:
+    def partial_fit(self, decisions: np.ndarray, rewards: np.ndarray, contexts: np.ndarray = None) -> None:
 
         # If TS and a binarizer function is given, binarize the rewards
         if isinstance(self.lp, _ThompsonSampling) and self.lp.binarizer:
@@ -59,13 +59,19 @@ class _TreeBandit(BaseMAB):
         # Calculate fit
         self._parallel_fit(decisions, rewards, contexts)
 
-    def predict(self, contexts: np.ndarray = None) -> Arm:
+    def predict(self, contexts: np.ndarray = None) -> Union[Arm, List[Arm]]:
 
         return self._parallel_predict(contexts, is_predict=True)
 
-    def predict_expectations(self, contexts: np.ndarray = None) -> Dict[Arm, Num]:
+    def predict_expectations(self, contexts: np.ndarray = None) -> Union[Dict[Arm, Num], List[Dict[Arm, Num]]]:
 
         return self._parallel_predict(contexts, is_predict=False)
+
+    def warm_start(self, arm_to_features: Dict[Arm, List[Num]], distance_quantile: float):
+        pass
+
+    def _copy_arms(self, cold_arm_to_warm_arm):
+        pass
 
     def _fit_arm(self, arm: Arm, decisions: np.ndarray, rewards: np.ndarray, contexts: Optional[np.ndarray] = None):
 
@@ -114,7 +120,7 @@ class _TreeBandit(BaseMAB):
         predictions = [None] * len(contexts)
         for index, row in enumerate(contexts):
             # Each row needs a separately seeded rng for reproducibility in parallel
-            rng = np.random.RandomState(seed=seeds[index])
+            rng = create_rng(seed=seeds[index])
 
             for arm in arms:
 
@@ -155,6 +161,11 @@ class _TreeBandit(BaseMAB):
         self.lp.add_arm(arm, binarizer)
         self.arm_to_tree[arm] = DecisionTreeRegressor(**self.tree_parameters)
         self.arm_to_leaf_to_rewards[arm] = defaultdict(partial(np.ndarray, 0))
+
+    def _drop_existing_arm(self, arm: Arm):
+        self.lp.remove_arm(arm)
+        self.arm_to_tree.pop(arm)
+        self.arm_to_leaf_to_rewards.pop(arm)
 
     def _create_leaf_lp(self, arm: Arm):
 
